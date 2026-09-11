@@ -46,6 +46,9 @@ import { CreateTicketFromConversationDialog } from "../../tickets/_components/cr
 import { ChatPanel } from "./chat-panel";
 import { ConversationInfoPanel } from "./conversation-info-panel";
 import { ConversationList } from "./conversation-list";
+import { InboxFilters } from "./inbox-filters";
+import { inboxSourceLabel } from "@/lib/inbox-labels";
+import { useIsLgUp } from "@/hooks/use-lg-media";
 
 const workbenchIconButtonClassName =
   "size-8 text-muted-foreground hover:bg-muted hover:text-foreground";
@@ -62,6 +65,7 @@ function getCustomerOnlineDotClassName(online?: boolean) {
 
 export function ConversationWorkbench() {
   const t = useI18n();
+  const isLgUp = useIsLgUp();
   const conversation = useAgentConversationsStore(
     agentConversationSelectors.selectedConversation,
   );
@@ -77,6 +81,12 @@ export function ConversationWorkbench() {
   const loadMessages = useAgentConversationsStore(
     (state) => state.loadMessages,
   );
+  const channels = useAgentConversationsStore((state) => state.channels);
+  const loadChannels = useAgentConversationsStore((state) => state.loadChannels);
+  const channelType = useAgentConversationsStore((state) => state.channelType);
+  const channelId = useAgentConversationsStore((state) => state.channelId);
+  const searchKeyword = useAgentConversationsStore((state) => state.searchKeyword);
+  const selectedChannel = channels.find((item) => item.id === conversation?.channelId);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [infoPanelCollapsed, setInfoPanelCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -113,7 +123,7 @@ export function ConversationWorkbench() {
     return () => {
       observer.disconnect();
     };
-  }, []);
+  }, [isLgUp]);
 
   const currentFilterOption =
     agentConversationFilterOptions.find((opt) => opt.value === conversationFilter) ??
@@ -121,10 +131,30 @@ export function ConversationWorkbench() {
   const getFilterLabel = (labelKey: string) => t(labelKey);
 
   useEffect(() => {
+    const id = Number(new URLSearchParams(window.location.search).get("conversationId"));
+    if (Number.isSafeInteger(id) && id > 0) {
+      void useAgentConversationsStore.getState().selectConversation(id).catch(() => toast.error(t("conversation.loadListFailed")));
+    }
+  }, [t]);
+
+  useEffect(() => {
     void loadConversations().catch((error) => {
       toast.error(error instanceof Error ? error.message : t("conversation.loadListFailed"));
     });
-  }, [loadConversations, conversationFilter, t]);
+  }, [loadConversations, conversationFilter, channelType, channelId, searchKeyword, t]);
+
+  useEffect(() => {
+    void loadChannels();
+    // Other operators' assigned conversations are not pushed to this operator's socket.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void loadChannels();
+      if (!useAgentConversationsStore.getState().conversationsLoading) {
+        void loadConversations().catch(() => {});
+      }
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [loadChannels, loadConversations]);
 
   async function handleConversationChanged(conversationId: number) {
     await loadConversations();
@@ -253,6 +283,7 @@ export function ConversationWorkbench() {
           <X className="size-4" />
         </Button>
       </div>
+      <InboxFilters />
       <ConversationList onAfterSelect={opts?.onListAfterSelect} />
     </div>
   );
@@ -297,7 +328,7 @@ export function ConversationWorkbench() {
                         id: conversation.customerId || conversation.id,
                       })}
                   </p>
-                  <span
+                  {selectedChannel?.channelType === "web" ? <span
                     className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] leading-none ${getCustomerOnlineClassName(
                       conversation.customerOnline,
                     )}`}
@@ -310,10 +341,10 @@ export function ConversationWorkbench() {
                     {conversation.customerOnline
                       ? t("conversation.customerOnline")
                       : t("conversation.customerOffline")}
-                  </span>
+                  </span> : null}
                 </div>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  <span>{t("conversation.channelNumber", { id: conversation.channelId || "-" })}</span>
+                  <span>{inboxSourceLabel(selectedChannel, conversation.channelId)}</span>
                   {conversation.customerId ? (
                     <>
                       <span className="text-muted-foreground/60"> / </span>
@@ -426,16 +457,16 @@ export function ConversationWorkbench() {
         }`}
         aria-hidden={!mobileMenuOpen}
       >
-        {renderConversationSidebar({
+        {!isLgUp && renderConversationSidebar({
           onListAfterSelect: () => setMobileMenuOpen(false),
         })}
       </div>
 
       <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden lg:hidden">
-        {workspaceContent}
+        {!isLgUp && workspaceContent}
       </div>
       <div className="hidden min-h-0 w-full flex-1 overflow-hidden lg:flex">
-        <ResizablePanelGroup orientation="horizontal">
+        {isLgUp && <ResizablePanelGroup orientation="horizontal">
           <ResizablePanel
             panelRef={sidebarPanelRef}
             defaultSize="20%"
@@ -473,7 +504,7 @@ export function ConversationWorkbench() {
           >
             <ConversationInfoPanel conversation={conversation} className="h-full" />
           </ResizablePanel>
-        </ResizablePanelGroup>
+        </ResizablePanelGroup>}
       </div>
       <ConversationTransferDialog
         open={transferOpen}

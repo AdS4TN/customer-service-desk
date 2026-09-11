@@ -17,6 +17,8 @@ type CreateKnowledgeBaseRequest struct {
 	ChunkTargetTokens     int     `json:"chunkTargetTokens"`
 	ChunkMaxTokens        int     `json:"chunkMaxTokens"`
 	ChunkOverlapTokens    int     `json:"chunkOverlapTokens"`
+	ParentChunkTokens     int     `json:"parentChunkTokens"`
+	ChildChunkTokens      int     `json:"childChunkTokens"`
 	AnswerMode            int     `json:"answerMode"`
 	Remark                string  `json:"remark"`
 }
@@ -43,11 +45,60 @@ type DeleteKnowledgeDirectoryRequest struct {
 }
 
 type CreateKnowledgeDocumentRequest struct {
-	KnowledgeBaseID int64                              `json:"knowledgeBaseId"`
-	DirectoryID     int64                              `json:"directoryId"`
-	Title           string                             `json:"title"`
-	ContentType     enums.KnowledgeDocumentContentType `json:"contentType"`
-	Content         string                             `json:"content"`
+	KnowledgeBaseID     int64                              `json:"knowledgeBaseId"`
+	DirectoryID         int64                              `json:"directoryId"`
+	Title               string                             `json:"title"`
+	ContentType         enums.KnowledgeDocumentContentType `json:"contentType"`
+	Content             string                             `json:"content"`
+	ChunkConfigOverride bool                               `json:"chunkConfigOverride"`
+	ChunkProvider       string                             `json:"chunkProvider"`
+	ChunkTargetTokens   int                                `json:"chunkTargetTokens"`
+	ChunkMaxTokens      int                                `json:"chunkMaxTokens"`
+	ChunkOverlapTokens  int                                `json:"chunkOverlapTokens"`
+	ParentChunkTokens   int                                `json:"parentChunkTokens"`
+	ChildChunkTokens    int                                `json:"childChunkTokens"`
+}
+
+type UploadKnowledgeDocumentRequest struct {
+	KnowledgeBaseID     int64  `form:"knowledgeBaseId" validate:"required"`
+	DirectoryID         int64  `form:"directoryId"`
+	Title               string `form:"title"`
+	ChunkConfigOverride bool   `form:"chunkConfigOverride"`
+	ChunkProvider       string `form:"chunkProvider"`
+	ChunkTargetTokens   int    `form:"chunkTargetTokens"`
+	ChunkMaxTokens      int    `form:"chunkMaxTokens"`
+	ChunkOverlapTokens  int    `form:"chunkOverlapTokens"`
+	ParentChunkTokens   int    `form:"parentChunkTokens"`
+	ChildChunkTokens    int    `form:"childChunkTokens"`
+}
+
+type CrawlKnowledgeWebsiteRequest struct {
+	KnowledgeBaseID     int64  `json:"knowledgeBaseId" validate:"required"`
+	DirectoryID         int64  `json:"directoryId"`
+	URL                 string `json:"url" validate:"required"`
+	MaxPages            int    `json:"maxPages"`
+	MaxDepth            int    `json:"maxDepth"`
+	ChunkConfigOverride bool   `json:"chunkConfigOverride"`
+	ChunkProvider       string `json:"chunkProvider"`
+	ChunkTargetTokens   int    `json:"chunkTargetTokens"`
+	ChunkMaxTokens      int    `json:"chunkMaxTokens"`
+	ChunkOverlapTokens  int    `json:"chunkOverlapTokens"`
+	ParentChunkTokens   int    `json:"parentChunkTokens"`
+	ChildChunkTokens    int    `json:"childChunkTokens"`
+}
+
+type PreviewKnowledgeDocumentRequest struct {
+	KnowledgeBaseID     int64                              `json:"knowledgeBaseId"`
+	Title               string                             `json:"title"`
+	ContentType         enums.KnowledgeDocumentContentType `json:"contentType"`
+	Content             string                             `json:"content"`
+	ChunkConfigOverride bool                               `json:"chunkConfigOverride"`
+	ChunkProvider       string                             `json:"chunkProvider"`
+	ChunkTargetTokens   int                                `json:"chunkTargetTokens"`
+	ChunkMaxTokens      int                                `json:"chunkMaxTokens"`
+	ChunkOverlapTokens  int                                `json:"chunkOverlapTokens"`
+	ParentChunkTokens   int                                `json:"parentChunkTokens"`
+	ChildChunkTokens    int                                `json:"childChunkTokens"`
 }
 
 type UpdateKnowledgeDocumentRequest struct {

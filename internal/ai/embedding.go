@@ -48,15 +48,40 @@ func (s *embedding) GenerateBatchEmbeddings(ctx context.Context, texts []string)
 		return nil, errorsx.InvalidParamI18n("error.e0216")
 	}
 
-	results := make([]EmbeddingResult, 0, len(texts))
 	for _, text := range texts {
-		result, err := s.callEmbeddingAPI(ctx, text)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate embedding for text: %w", err)
+		if text == "" {
+			return nil, errorsx.InvalidParamI18n("error.e0215")
 		}
-		results = append(results, *result)
 	}
-
+	config, err := GetEnabledAIConfig(enums.AIModelTypeEmbedding)
+	if err != nil {
+		return nil, err
+	}
+	client := newOpenAIClient(*config)
+	response, err := client.Embeddings.New(ctx, openai.EmbeddingNewParams{
+		Input: openai.EmbeddingNewParamsInputUnion{OfArrayOfStrings: texts},
+		Model: openai.EmbeddingModel(config.ModelName),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to call batch embedding api: %w", err)
+	}
+	if len(response.Data) != len(texts) {
+		return nil, fmt.Errorf("embedding api returned %d vectors for %d inputs", len(response.Data), len(texts))
+	}
+	results := make([]EmbeddingResult, len(texts))
+	for _, data := range response.Data {
+		if data.Index < 0 || int(data.Index) >= len(results) {
+			return nil, fmt.Errorf("embedding api returned invalid index %d", data.Index)
+		}
+		vector := make([]float32, len(data.Embedding))
+		for index, value := range data.Embedding {
+			vector[index] = float32(value)
+		}
+		results[data.Index] = EmbeddingResult{
+			Vector: vector, TokensUsed: int(response.Usage.TotalTokens),
+			ModelName: response.Model, Dimension: len(vector),
+		}
+	}
 	return results, nil
 }
 

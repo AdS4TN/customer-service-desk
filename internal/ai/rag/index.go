@@ -55,6 +55,11 @@ func (s *index) IndexDocumentByID(ctx context.Context, documentID int64) error {
 }
 
 func (s *index) IndexDocument(ctx context.Context, document models.KnowledgeDocument) error {
+	_, err := s.IndexDocumentWithProgress(ctx, document, nil)
+	return err
+}
+
+func (s *index) IndexDocumentWithProgress(ctx context.Context, document models.KnowledgeDocument, progress func(DocumentIndexStage)) (*DocumentIndexResult, error) {
 	start := time.Now()
 	if err := s.markDocumentIndexPending(document.ID); err != nil {
 		slog.Error("Failed to mark knowledge document index as pending", "document_id", document.ID, "error", err)
@@ -70,11 +75,11 @@ func (s *index) IndexDocument(ctx context.Context, document models.KnowledgeDocu
 	// TODO 这里每次都查询下知识库不太友好
 	knowledgeBase, err := s.loadDocumentKnowledgeBase(document)
 	if err != nil {
-		return fail(err)
+		return nil, fail(err)
 	}
-	vectors, chunkCount, err := s.runDocumentIndex(ctx, document, *knowledgeBase)
+	result, vectors, err := s.runDocumentIndexWithProgress(ctx, document, *knowledgeBase, progress)
 	if err != nil {
-		return fail(err)
+		return result, fail(err)
 	}
 
 	if err := s.markDocumentIndexIndexed(document.ID); err != nil {
@@ -83,12 +88,12 @@ func (s *index) IndexDocument(ctx context.Context, document models.KnowledgeDocu
 
 	slog.Info("Document indexed successfully",
 		slog.Any("document_id", document.ID),
-		slog.Any("chunks_count", chunkCount),
+		slog.Any("chunks_count", result.ChunkCount),
 		slog.Any("vectors_count", len(vectors)),
 		slog.Any("time_taken", time.Since(start).String()),
 	)
 
-	return nil
+	return result, nil
 }
 
 func (s *index) IndexFAQByID(ctx context.Context, faqID int64) error {
@@ -119,50 +124,37 @@ func (s *index) IndexFAQByID(ctx context.Context, faqID int64) error {
 }
 
 func (s *index) RemoveDocumentIndex(ctx context.Context, documentID int64) error {
-	chunks := repositories.KnowledgeChunkRepository.FindByDocumentID(sqls.DB(), documentID)
-	if len(chunks) == 0 {
-		return nil
-	}
-
-	if err := s.deleteChunkVectors(ctx, s.collectChunkVectorIDs(chunks)); err != nil {
-		slog.Error("Failed to delete vectors", "error", err)
+	if err := s.deleteVectorsByFilter(ctx, &vectordb.SearchFilter{DocumentIDs: []int64{documentID}}); err != nil {
+		slog.Error("Failed to delete document vectors", "document_id", documentID, "error", err)
 	}
 
 	if err := repositories.KnowledgeChunkRepository.DeleteByDocumentID(sqls.DB(), documentID); err != nil {
 		return fmt.Errorf("failed to delete chunks: %w", err)
 	}
 
-	slog.Info("Document index removed", "document_id", documentID, "chunks_removed", len(chunks))
+	slog.Info("Document index removed", "document_id", documentID)
 	return nil
 }
 
 func (s *index) RemoveFAQIndex(ctx context.Context, faqID int64) error {
-	chunks := repositories.KnowledgeChunkRepository.FindByFaqID(sqls.DB(), faqID)
-	if len(chunks) == 0 {
-		return nil
-	}
-	if err := s.deleteChunkVectors(ctx, s.collectChunkVectorIDs(chunks)); err != nil {
-		slog.Error("Failed to delete faq vectors", "error", err)
+	if err := s.deleteVectorsByFilter(ctx, &vectordb.SearchFilter{FAQIDs: []int64{faqID}}); err != nil {
+		slog.Error("Failed to delete faq vectors", "faq_id", faqID, "error", err)
 	}
 	if err := repositories.KnowledgeChunkRepository.DeleteByFaqID(sqls.DB(), faqID); err != nil {
 		return fmt.Errorf("failed to delete faq chunks: %w", err)
 	}
-	slog.Info("FAQ index removed", "faq_id", faqID, "chunks_removed", len(chunks))
+	slog.Info("FAQ index removed", "faq_id", faqID)
 	return nil
 }
 
 func (s *index) RemoveKnowledgeBaseIndex(ctx context.Context, knowledgeBaseID int64) error {
-	chunks := repositories.KnowledgeChunkRepository.FindByKnowledgeBaseID(sqls.DB(), knowledgeBaseID)
-	if len(chunks) == 0 {
-		return nil
-	}
-	if err := s.deleteChunkVectors(ctx, s.collectChunkVectorIDs(chunks)); err != nil {
+	if err := s.deleteVectorsByFilter(ctx, &vectordb.SearchFilter{KnowledgeBaseIDs: []int64{knowledgeBaseID}}); err != nil {
 		slog.Error("Failed to delete knowledge base vectors", "knowledge_base_id", knowledgeBaseID, "error", err)
 	}
 	if err := repositories.KnowledgeChunkRepository.DeleteByKnowledgeBaseID(sqls.DB(), knowledgeBaseID); err != nil {
 		return fmt.Errorf("failed to delete chunks for knowledge base %d: %w", knowledgeBaseID, err)
 	}
-	slog.Info("Knowledge base index removed", "knowledge_base_id", knowledgeBaseID, "chunks_removed", len(chunks))
+	slog.Info("Knowledge base index removed", "knowledge_base_id", knowledgeBaseID)
 	return nil
 }
 
@@ -326,6 +318,5 @@ func joinSimilarQuestions(items []string) string {
 }
 
 func (s *index) resetKnowledgeBaseIndexStorage(ctx context.Context, knowledgeBaseID int64) error {
-	chunks := repositories.KnowledgeChunkRepository.FindByKnowledgeBaseID(sqls.DB(), knowledgeBaseID)
-	return s.cleanupKnowledgeBaseChunks(ctx, knowledgeBaseID, chunks)
+	return s.cleanupKnowledgeBaseChunks(ctx, knowledgeBaseID)
 }

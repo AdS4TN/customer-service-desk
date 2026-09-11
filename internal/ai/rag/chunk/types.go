@@ -17,16 +17,19 @@ type ChunkOptions struct {
 	TargetTokens   int
 	MaxTokens      int
 	OverlapTokens  int
+	ParentTokens   int
+	ChildTokens    int
 	EnableFallback bool
 }
 
 type ChunkResult struct {
-	ChunkNo     int
-	Title       string
-	Content     string
-	ChunkType   enums.KnowledgeChunkType
-	SectionPath string
-	CharCount   int
-	TokenCount  int
-	Metadata    map[string]any
+	ChunkNo        int
+	Title          string
+	Content        string
+	ContextContent string
+	ChunkType      enums.KnowledgeChunkType
+	SectionPath    string
+	CharCount      int
+	TokenCount     int
+	Metadata       map[string]any
 }

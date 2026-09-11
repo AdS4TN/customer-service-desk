@@ -1,23 +1,18 @@
 import {
   BotMessageSquareIcon,
-  BookOpenIcon,
   BrainCircuitIcon,
-  Building2Icon,
   CalendarClockIcon,
   FileTextIcon,
-  CircleHelpIcon,
   GlobeIcon,
   KeyRoundIcon,
   LayoutDashboardIcon,
-  MessageSquareWarningIcon,
   MessageSquareCodeIcon,
   MessageSquareMoreIcon,
-  SettingsIcon,
+  MessageCircleIcon,
   ShieldCheckIcon,
   TagsIcon,
   UserCogIcon,
   UsersIcon,
-  WorkflowIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -120,6 +115,12 @@ export const dashboardNavSections: DashboardNavSectionConfig[] = [
         requiredPermission: "ticket.view",
       },
       {
+        titleKey: "nav.salesLeads",
+        url: "/dashboard/sales-leads",
+        icon: <FileTextIcon />,
+        requiredPermission: "conversation.view",
+      },
+      {
         titleKey: "nav.conversationMonitor",
         url: "/dashboard/conversation-monitor",
         icon: <BotMessageSquareIcon />,
@@ -130,42 +131,6 @@ export const dashboardNavSections: DashboardNavSectionConfig[] = [
         url: "/dashboard/customers",
         icon: <UsersIcon />,
         requiredPermission: "customer.view",
-      },
-      {
-        titleKey: "nav.companies",
-        url: "/dashboard/companies",
-        icon: <Building2Icon />,
-        requiredPermission: "company.view",
-      },
-    ],
-  },
-  {
-    titleKey: "nav.supportCenter",
-    icon: <CircleHelpIcon />,
-    items: [
-      {
-        titleKey: "nav.supportDocs",
-        url: "/dashboard/support/docs",
-        icon: <BookOpenIcon />,
-        requiredPermission: "docPage.view",
-      },
-      {
-        titleKey: "nav.supportCommunity",
-        url: "/dashboard/support/community",
-        icon: <CircleHelpIcon />,
-        requiredPermission: "supportCommunity.view",
-      },
-      {
-        titleKey: "nav.supportCommunityCategories",
-        url: "/dashboard/support/community-categories",
-        icon: <TagsIcon />,
-        requiredPermission: "supportCommunity.view",
-      },
-      {
-        titleKey: "nav.supportConfig",
-        url: "/dashboard/support/config",
-        icon: <SettingsIcon />,
-        requiredPermission: "supportConfig.view",
       },
     ],
   },
@@ -197,17 +162,29 @@ export const dashboardNavSections: DashboardNavSectionConfig[] = [
         icon: <CalendarClockIcon />,
         requiredPermission: "agentTeamSchedule.view",
       },
+    ],
+  },
+  {
+    titleKey: "nav.channels",
+    icon: <GlobeIcon />,
+    items: [
       {
-        titleKey: "nav.channels",
-        url: "/dashboard/channels",
+        titleKey: "nav.webChannels",
+        url: "/dashboard/channels/web",
         icon: <GlobeIcon />,
         requiredPermission: "channel.view",
       },
       {
-        titleKey: "nav.wxworkOutbox",
-        url: "/dashboard/wxwork-outbox",
-        icon: <MessageSquareWarningIcon />,
-        requiredPermission: "wxworkOutbox.view",
+        titleKey: "nav.messengerChannels",
+ url: "/dashboard/channels/messenger",
+ icon: <MessageCircleIcon />,
+ requiredPermission: "channel.view",
+ },
+ {
+ titleKey: "nav.whatsappChannels",
+        url: "/dashboard/channels/whatsapp",
+        icon: <MessageCircleIcon />,
+        requiredPermission: "channel.view",
       },
     ],
   },
@@ -233,12 +210,6 @@ export const dashboardNavSections: DashboardNavSectionConfig[] = [
         icon: <MessageSquareMoreIcon />,
         requiredPermission: "aiAgent.view",
       },
-		{
-			titleKey: "nav.workflows",
-			url: "/dashboard/ai-workflows",
-			icon: <WorkflowIcon />,
-			requiredPermission: "aiAgent.view",
-		},
       {
         titleKey: "nav.skillDefinition",
         url: "/dashboard/skill-definition",
@@ -250,12 +221,6 @@ export const dashboardNavSections: DashboardNavSectionConfig[] = [
         url: "/dashboard/mcp",
         icon: <MessageSquareCodeIcon />,
         requiredPermission: "mcp.view",
-      },
-      {
-        titleKey: "nav.workflowRuns",
-        url: "/dashboard/ai-workflow-runs",
-        icon: <WorkflowIcon />,
-        requiredPermission: "aiAgent.view",
       },
       {
         titleKey: "nav.agentRuns",

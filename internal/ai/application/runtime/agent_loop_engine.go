@@ -22,6 +22,7 @@ import (
 	"agent-desk/internal/pkg/dto/request"
 	"agent-desk/internal/pkg/enums"
 	"agent-desk/internal/pkg/errorsx"
+	"agent-desk/internal/pkg/reception"
 	"agent-desk/internal/pkg/toolx"
 	"agent-desk/internal/pkg/utils"
 	svc "agent-desk/internal/services"
@@ -32,21 +33,25 @@ import (
 // AgentLoopEngine is the only Agent runtime. The model chooses among the
 // Agent's published Skills, Workflows, knowledge capabilities, and MCP tools.
 type AgentLoopEngine struct {
-	history  func(int64, int) []models.Message
-	retrieve func(context.Context, models.AIAgent, string) (string, int, error)
-	loop     func(context.Context, models.AIConfig, string, string, []ai.ToolDefinition, int, ai.ToolCallExecutor) (*ai.ToolLoopResult, error)
-	complete func(context.Context, models.AIConfig, string, string) (*ai.ChatCompletionResult, error)
+	history    func(int64, int64, int) []models.Message
+	retrieve   func(context.Context, models.AIAgent, string) (string, int, error)
+	loop       func(context.Context, models.AIConfig, string, string, []ai.ToolDefinition, int, ai.ToolCallExecutor) (*ai.ToolLoopResult, error)
+	streamLoop func(context.Context, models.AIConfig, string, string, []ai.ToolDefinition, int, ai.ToolCallExecutor, func(string)) (*ai.ToolLoopResult, error)
+	complete   func(context.Context, models.AIConfig, string, string) (*ai.ChatCompletionResult, error)
+	memory     func(models.Conversation) string
 }
 
 func NewAgentLoopEngine() *AgentLoopEngine {
 	return &AgentLoopEngine{
-		history: func(conversationID int64, limit int) []models.Message {
-			items, _, _ := svc.MessageService.FindByConversationIDCursor(conversationID, 0, limit, "", "")
+		history: func(conversationID, beforeMessageID int64, limit int) []models.Message {
+			items, _, _ := svc.MessageService.FindByConversationIDCursor(conversationID, beforeMessageID, limit, "", "")
 			return items
 		},
-		retrieve: retrieveAgentLoopKnowledge,
-		loop:     einoAgentLoop,
-		complete: ai.LLM.ChatWithConfig,
+		retrieve:   retrieveAgentLoopKnowledge,
+		loop:       einoAgentLoop,
+		streamLoop: einoAgentLoopStream,
+		complete:   ai.LLM.ChatWithConfig,
+		memory:     svc.ConversationMemoryService.Context,
 	}
 }
 
@@ -59,6 +64,9 @@ func newAgentLoopEngineWithLoop(loop func(context.Context, models.AIConfig, stri
 func (e *AgentLoopEngine) Run(ctx context.Context, req RunInput) (*RunResult, error) {
 	startedAt := time.Now()
 	req.UserMessage.Content = utils.BuildRuntimeMessageText(req.UserMessage.MessageType, req.UserMessage.Content)
+	if req.UserMessage.MessageType == enums.IMMessageTypeHTML {
+		req.UserMessage.MessageType = enums.IMMessageTypeText
+	}
 	snapshot, err := svc.AgentRevisionService.ResolvePublishedSnapshot(req.AIAgent, req.AIConfig)
 	if err != nil {
 		_, _ = writeAgentLoopRun(req, startedAt, nil, "", 0, 0, nil, agentLoopSkillContext{}, agentLoopResponsePolicy{}, nil, err, false, nil)
@@ -70,8 +78,19 @@ func (e *AgentLoopEngine) Run(ctx context.Context, req RunInput) (*RunResult, er
 	var toolCalls []svc.AgentLoopToolCallInput
 	state := agentLoopExecutionState{}
 	definitions := append(agentLoopToolDefinitions(turn), agentLoopDecisionTool)
-	loopResult, loopErr := e.loop(ctx, req.AIConfig, turn.SystemPrompt, turn.UserPrompt, definitions, req.AIAgent.MaxSteps,
-		e.toolSearchExecutor(req, turn, &state, &toolCalls))
+	executor := e.toolSearchExecutor(req, turn, &state, &toolCalls)
+	var loopResult *ai.ToolLoopResult
+	var loopErr error
+	if req.OnStream != nil && e.streamLoop != nil {
+		loopResult, loopErr = e.streamLoop(ctx, req.AIConfig, turn.SystemPrompt, turn.UserPrompt, definitions, req.AIAgent.MaxSteps, executor, func(content string) {
+			if content == "" {
+				return
+			}
+			req.OnStream(StreamEvent{Type: StreamEventOutput, Content: content, OccurredAt: time.Now()})
+		})
+	} else {
+		loopResult, loopErr = e.loop(ctx, req.AIConfig, turn.SystemPrompt, turn.UserPrompt, definitions, req.AIAgent.MaxSteps, executor)
+	}
 	if state.Interrupted != nil {
 		result := state.Interrupted
 		runID, recordErr := writeAgentLoopRun(req, startedAt, &ai.ChatCompletionResult{Content: result.ReplyText, ModelName: req.AIConfig.ModelName}, turn.UserPrompt, turn.HistoryCount, turn.RetrieverCount, turn.RetrieveErr, state.SkillContext, turn.ResponsePolicy, toolCalls, nil, true, state.WorkflowSteps)
@@ -173,13 +192,14 @@ func (e *AgentLoopEngine) buildUserPrompt(req RunInput) (string, int) {
 	}
 	items := []models.Message(nil)
 	if e.history != nil && req.Conversation.ID > 0 {
-		// The triggering customer message is already persisted in most reply
-		// paths. Fetch one extra item so it does not consume history capacity.
-		items = e.history(req.Conversation.ID, limit+1)
+		// Fetch before the trigger, not the latest page: retrieval may take long
+		// enough for later customer messages to arrive. Extra history keeps the
+		// language anchor available through runs of punctuation/media messages.
+		items = e.history(req.Conversation.ID, req.UserMessage.ID, 100)
 	}
 	lines := make([]string, 0, len(items)+2)
 	for _, item := range items {
-		if item.ID == req.UserMessage.ID || strings.TrimSpace(item.Content) == "" {
+		if !agentLoopHistoryMessageBefore(item, req.Conversation.ID, req.UserMessage.ID) || strings.TrimSpace(item.Content) == "" {
 			continue
 		}
 		role := agentLoopMessageRole(item)
@@ -191,10 +211,14 @@ func (e *AgentLoopEngine) buildUserPrompt(req RunInput) (string, int) {
 	if len(lines) > limit {
 		lines = lines[len(lines)-limit:]
 	}
-	current := strings.TrimSpace(req.UserMessage.Content)
+	current := strings.TrimSpace(utils.BuildRuntimeMessageText(req.UserMessage.MessageType, req.UserMessage.Content))
+	// The live conversation summary may already describe a newer message.
+	req.Conversation.LastMessageSummary = current
 	customerContext := buildAgentLoopCustomerContext(req.Conversation)
-	if len(lines) == 0 && customerContext == "" {
-		return current, 0
+	if e.memory != nil {
+		if memory := e.memory(req.Conversation); memory != "" {
+			customerContext += "\n\n" + memory
+		}
 	}
 	parts := make([]string, 0, 3)
 	if customerContext != "" {
@@ -203,6 +227,7 @@ func (e *AgentLoopEngine) buildUserPrompt(req RunInput) (string, int) {
 	if len(lines) > 0 {
 		parts = append(parts, "Conversation history:\n"+strings.Join(lines, "\n"))
 	}
+	parts = append(parts, agentLoopLanguageContext(req, items))
 	parts = append(parts, "Current customer message:\n"+current)
 	return strings.Join(parts, "\n\n"), len(lines)
 }
@@ -530,31 +555,11 @@ var (
 	}
 )
 
-// agentLoopToolDefinitions registers the capability codes as compatibility
-// aliases in addition to tool_search. Some OpenAI-compatible providers invoke
-// a capability code mentioned in the prompt directly instead of wrapping it in
-// tool_search. Eino validates the function name before our executor runs, so
-// those calls must be registered here and then routed through the same policy
-// boundary below.
+// Keep capability codes inside tool_search arguments. Codes such as
+// "skill/1" and "builtin/knowledge_retrieve" are useful internal identifiers
+// but are invalid OpenAI function names because they contain '/'.
 func agentLoopToolDefinitions(turn agentLoopTurn) []ai.ToolDefinition {
-	definitions := []ai.ToolDefinition{agentLoopToolSearchTool}
-	seen := map[string]struct{}{"tool_search": {}}
-	for _, code := range turn.AllowedTools {
-		code = strings.TrimSpace(code)
-		if code == "" {
-			continue
-		}
-		if _, exists := seen[code]; exists {
-			continue
-		}
-		seen[code] = struct{}{}
-		definitions = append(definitions, ai.ToolDefinition{
-			Name:        code,
-			Description: "Execute the configured capability " + code + " with its arguments.",
-			Parameters:  map[string]any{"type": "object", "additionalProperties": true},
-		})
-	}
-	return definitions
+	return []ai.ToolDefinition{agentLoopToolSearchTool}
 }
 
 func agentLoopSafeBuiltinCodes() []string {
@@ -662,7 +667,7 @@ func (e *AgentLoopEngine) toolSearchExecutor(runInput RunInput, turn agentLoopTu
 				resultPreview, executeErr = executeAgentLoopWorkflow(ctx, runInput, toolCode, turn.Workflows, state)
 			}
 		default:
-			definition, resultPreview, executeErr = executeAgentLoopReadTool(ctx, runInput.Conversation, runInput.AIAgent, toolCode, arguments, policy)
+			definition, resultPreview, executeErr = executeAgentLoopReadTool(ctx, runInput.Conversation, runInput.UserMessage.ID, runInput.AIAgent, toolCode, arguments, policy)
 			if executeErr != nil && definition.Code == "" {
 				definition, resultPreview, executeErr = executeAgentLoopMCP(ctx, runInput, toolCode, arguments, policy, state)
 			}
@@ -900,7 +905,7 @@ func buildAgentLoopConfirmedMCPFallback(toolTitle string) string {
 	return fmt.Sprintf("“%s”已成功执行。", toolTitle)
 }
 
-func executeAgentLoopReadTool(ctx context.Context, conversation models.Conversation, agent models.AIAgent, toolCode string, arguments map[string]any, policy aitooling.Policy) (aitooling.Definition, string, error) {
+func executeAgentLoopReadTool(ctx context.Context, conversation models.Conversation, beforeMessageID int64, agent models.AIAgent, toolCode string, arguments map[string]any, policy aitooling.Policy) (aitooling.Definition, string, error) {
 	toolCode = toolx.NormalizeToolCodeAlias(strings.TrimSpace(toolCode))
 	if toolCode != toolx.BuiltinConversationContext.Code && toolCode != toolx.BuiltinKnowledgeRetrieve.Code && toolCode != toolx.GraphTriageServiceRequest.Code && toolCode != toolx.GraphAnalyzeConversation.Code && toolCode != toolx.GraphPrepareTicketDraft.Code {
 		return aitooling.Definition{}, "", fmt.Errorf("tool is not a built-in read tool")
@@ -930,11 +935,10 @@ func executeAgentLoopReadTool(ctx context.Context, conversation models.Conversat
 		return definition, string(result), err
 	}
 	result, err := json.Marshal(map[string]any{
-		"conversationId":     conversation.ID,
-		"customerName":       strings.TrimSpace(conversation.CustomerName),
-		"lastMessageSummary": strings.TrimSpace(conversation.LastMessageSummary),
-		"currentAssigneeId":  conversation.CurrentAssigneeID,
-		"recentMessages":     agentLoopToolConversationMessages(conversation.ID),
+		"conversationId":    conversation.ID,
+		"customerName":      strings.TrimSpace(conversation.CustomerName),
+		"currentAssigneeId": conversation.CurrentAssigneeID,
+		"recentMessages":    agentLoopToolConversationMessages(conversation.ID, beforeMessageID),
 	})
 	if err != nil {
 		return definition, "", err
@@ -942,13 +946,16 @@ func executeAgentLoopReadTool(ctx context.Context, conversation models.Conversat
 	return definition, string(result), nil
 }
 
-func agentLoopToolConversationMessages(conversationID int64) []map[string]string {
+func agentLoopToolConversationMessages(conversationID, beforeMessageID int64) []map[string]string {
 	if conversationID <= 0 {
 		return []map[string]string{}
 	}
-	items, _, _ := svc.MessageService.FindByConversationIDCursor(conversationID, 0, 6, "", "")
+	items, _, _ := svc.MessageService.FindByConversationIDCursor(conversationID, beforeMessageID, 6, "", "")
 	ret := make([]map[string]string, 0, len(items))
 	for _, item := range items {
+		if !agentLoopHistoryMessageBefore(item, conversationID, beforeMessageID) {
+			continue
+		}
 		role := agentLoopMessageRole(item)
 		content := strings.TrimSpace(utils.BuildRuntimeMessageText(item.MessageType, item.Content))
 		if role == "" || content == "" {
@@ -989,6 +996,11 @@ func buildAgentLoopSystemPrompt(agent models.AIAgent, hasKnowledgeBase bool, kno
 	if prompt == "" {
 		prompt = "You are a customer service assistant. Answer accurately, ask for clarification when evidence is insufficient, and do not invent facts."
 	}
+	prompt += reception.Prompt(agent.ReceptionPolicy)
+	prompt += replyLanguagePolicy
+	prompt += `
+
+You are the official AI customer service representative of the organization operating this assistant, not an outside observer. Speak directly on behalf of the organization. When discussing the organization, its products, services, policies, or capabilities, use first-person language such as "we" and "our". Never refer to the organization as "the company", "the brand", "they", or another third party. Treat Knowledge evidence as internal company knowledge: use it to answer naturally, but never mention documents, materials, retrieved context, a knowledge base, a website, search results, or whether those sources contain the answer. If the organization's formal name is not configured or supported by evidence, do not guess it; continue using first-person language. Clearly identify yourself as an AI customer service assistant when identity disclosure is relevant, and never pretend to be a human.`
 	prompt += "\n\nMaintain conversational continuity. If the immediately preceding assistant message already welcomed the customer and the current customer message is only a greeting, reply briefly without repeating the welcome wording, service capabilities, or service scope."
 	if retrieveErr != nil {
 		prompt += "\n\nKnowledge retrieval is temporarily unavailable for this message. You may answer greetings, acknowledgements, gratitude, farewells, and requests for clarification naturally. For product facts, policies, pricing, functions, procedures, timing, refunds, accounts, permissions, or after-sales questions, do not claim that any detail is verified. Explain that you cannot verify it now, ask one focused question when useful, or offer human handoff."

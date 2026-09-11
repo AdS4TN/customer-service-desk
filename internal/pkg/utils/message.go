@@ -16,13 +16,14 @@ import (
 )
 
 type imMessageAssetPayload struct {
-	AssetID    string              `json:"assetId"`
-	Provider   enums.AssetProvider `json:"provider,omitempty"`
-	StorageKey string              `json:"storageKey,omitempty"`
-	Filename   string              `json:"filename,omitempty"`
-	FileSize   int64               `json:"fileSize,omitempty"`
-	MimeType   string              `json:"mimeType,omitempty"`
-	URL        string              `json:"url,omitempty"`
+	AssetID       string              `json:"assetId"`
+	Provider      enums.AssetProvider `json:"provider,omitempty"`
+	StorageKey    string              `json:"storageKey,omitempty"`
+	Filename      string              `json:"filename,omitempty"`
+	FileSize      int64               `json:"fileSize,omitempty"`
+	MimeType      string              `json:"mimeType,omitempty"`
+	URL           string              `json:"url,omitempty"`
+	LinkedMessage json.RawMessage     `json:"linkedMessage,omitempty"`
 }
 
 func SanitizeMessageHTML(content string) string {

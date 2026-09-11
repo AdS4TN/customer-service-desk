@@ -13,6 +13,8 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { suggestionParagraphs } from "@/lib/copilot"
+import { toast } from "sonner"
 import {
   Command,
   CommandEmpty,
@@ -52,6 +54,12 @@ type SharedMessageEditorVariant = "customer" | "agent"
 type SharedMessageEditorProps = {
   variant: SharedMessageEditorVariant
   disabled?: boolean
+  textOnly?: boolean
+  allowAttachments?: boolean
+  initialHTML?: string
+  insertText?: { id: string; text: string }
+  onTextInserted?: (id: string) => void
+  onHTMLChange?: (html: string) => void
   uploadingAsset?: boolean
   manageLocalUploading?: boolean
   quickReplies?: {
@@ -61,6 +69,7 @@ type SharedMessageEditorProps = {
     onOpenChange: (open: boolean) => void
   }
   onSend: (html: string) => Promise<void>
+  sendLabel?: string
   onUploadImage: (file: File) => Promise<UploadedMessageEditorImage | null>
   onSendAttachment: (file: File) => Promise<void>
 }
@@ -68,10 +77,17 @@ type SharedMessageEditorProps = {
 export function SharedMessageEditor({
   variant,
   disabled = false,
+  textOnly = false,
+  allowAttachments = false,
+  initialHTML = "",
+  insertText,
+  onTextInserted,
+  onHTMLChange,
   uploadingAsset = false,
   manageLocalUploading = false,
   quickReplies,
   onSend,
+  sendLabel,
   onUploadImage,
   onSendAttachment,
 }: SharedMessageEditorProps) {
@@ -86,6 +102,10 @@ export function SharedMessageEditor({
   const objectUrlsRef = useRef<Set<string>>(new Set())
   const uploadedImagesRef = useRef(new Map<string, UploadedMessageEditorImage>())
   const placeholderRef = useRef(t("conversation.editorPlaceholder"))
+  const sendingRef = useRef(false)
+  const insertedRef = useRef("")
+  const onHTMLChangeRef = useRef(onHTMLChange)
+  onHTMLChangeRef.current = onHTMLChange
   const isCustomer = variant === "customer"
   const isUploading = uploadingAsset || (manageLocalUploading && localUploading)
 
@@ -121,18 +141,19 @@ export function SharedMessageEditor({
         orderedList: false,
         horizontalRule: false,
       }),
-      MessageImageExtension,
+      ...(textOnly ? [] : [MessageImageExtension]),
       Placeholder.configure({
         placeholder: () => placeholderRef.current,
       }),
     ],
-    content: "",
+    content: initialHTML,
+    onUpdate: ({ editor }) => onHTMLChangeRef.current?.(buildSendableEditorHTML(editor.getHTML(), uploadedImagesRef.current)),
     editorProps: {
       attributes: {
         class: getEditorClassName(variant),
       },
       handleKeyDown: (_view, event) => {
-        if (event.key === "Enter" && !event.shiftKey) {
+        if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
           event.preventDefault()
           void handleSend()
           return true
@@ -140,6 +161,14 @@ export function SharedMessageEditor({
         return false
       },
       handlePaste: (_view, event) => {
+        if (textOnly && getClipboardImageFile(event.clipboardData)) {
+          event.preventDefault()
+          const imageFile = getClipboardImageFile(event.clipboardData)
+          if (allowAttachments && imageFile && !disabled && !isUploading) {
+            void sendStandaloneAttachment(imageFile)
+          } else if (!allowAttachments) { toast.error(t("conversation.inbox.textOnly")) }
+          return true
+        }
         if (disabled || isUploading) {
           return false
         }
@@ -170,8 +199,16 @@ export function SharedMessageEditor({
     })
   }, [disabled, editor, isUploading])
 
+  useEffect(() => {
+    if (!editor || disabled || isUploading || !insertText || insertedRef.current === insertText.id) return
+    insertedRef.current = insertText.id
+    const paragraphs = suggestionParagraphs(insertText.text)
+    editor.chain().focus("end").insertContentAt(editor.state.doc.content.size, paragraphs).run()
+    onTextInserted?.(insertText.id)
+  }, [editor, disabled, isUploading, insertText, onTextInserted])
+
   async function handleSend() {
-    if (!editor || disabled || isUploading) {
+    if (!editor || disabled || isUploading || sendingRef.current) {
       return
     }
     const rawHTML = editor.getHTML()
@@ -182,15 +219,17 @@ export function SharedMessageEditor({
     if (!isMeaningfulHTML(html)) {
       return
     }
-    await onSendRef.current(html)
-    editor.commands.clearContent(true)
-    revokeEditorObjectUrls(objectUrlsRef.current)
-    uploadedImagesRef.current.clear()
-    if (!isCustomer) {
-      requestAnimationFrame(() => {
-        editor.commands.focus("end")
-      })
-    }
+    sendingRef.current = true
+    try {
+      await onSendRef.current(html)
+      onHTMLChangeRef.current?.("")
+      if (!editor.isDestroyed) editor.commands.clearContent(true)
+      revokeEditorObjectUrls(objectUrlsRef.current)
+      uploadedImagesRef.current.clear()
+      if (!isCustomer && !editor.isDestroyed) requestAnimationFrame(() => { if (!editor.isDestroyed) editor.commands.focus("end") })
+    } catch {
+      // The caller presents the error; keep the draft available for correction or retry.
+    } finally { sendingRef.current = false }
   }
 
   async function handleSelectImage(event: ChangeEvent<HTMLInputElement>) {
@@ -200,7 +239,8 @@ export function SharedMessageEditor({
       restoreFocusIfNeeded()
       return
     }
-    await insertUploadedImage(file)
+    if (textOnly && allowAttachments) { await sendStandaloneAttachment(file) }
+    else { await insertUploadedImage(file) }
   }
 
   async function insertUploadedImage(file: File) {
@@ -237,6 +277,16 @@ export function SharedMessageEditor({
         uploaded,
         uploadedImagesRef.current
       )
+      // Store durable image attributes in the document so switching conversations can restore the draft.
+      if (!editor.isDestroyed) {
+        const transaction = editor.state.tr
+        editor.state.doc.descendants((node, pos) => {
+          if (node.type.name === "image" && node.attrs.title === placeholderId) {
+            transaction.setNodeMarkup(pos, undefined, { ...node.attrs, src: uploaded.url, title: null, dataAssetId: uploaded.assetId, dataProvider: uploaded.provider, dataStorageKey: uploaded.storageKey })
+          }
+        })
+        editor.view.dispatch(transaction)
+      }
     } finally {
       setLocalUploading(false)
       requestAnimationFrame(() => {
@@ -255,6 +305,10 @@ export function SharedMessageEditor({
       return
     }
 
+    await sendStandaloneAttachment(file)
+  }
+
+  async function sendStandaloneAttachment(file: File) {
     shouldRestoreFocusRef.current = editor?.isFocused ?? true
     try {
       setLocalUploading(true)
@@ -314,7 +368,7 @@ export function SharedMessageEditor({
       )}
       <div className={getToolbarClassName(variant)}>
         <div className={isCustomer ? "flex items-center gap-1.5" : "flex items-center gap-1"}>
-          <Button
+          {!textOnly || allowAttachments ? <><Button
             type="button"
             variant="ghost"
             size="icon"
@@ -346,6 +400,7 @@ export function SharedMessageEditor({
           >
             <PaperclipIcon className={isCustomer ? undefined : "size-4"} />
           </Button>
+          </> : null}
           {quickReplies ? (
             <Popover open={quickReplies.open} onOpenChange={quickReplies.onOpenChange}>
               <PopoverTrigger
@@ -417,7 +472,7 @@ export function SharedMessageEditor({
               disabled={disabled || isUploading}
             >
               <SendIcon className="mr-1 size-4" />
-              {isUploading ? t("conversation.uploading") : t("conversation.send")}
+              {isUploading ? t("conversation.uploading") : sendLabel ?? t("conversation.send")}
             </Button>
           )}
         </div>

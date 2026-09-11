@@ -210,6 +210,15 @@ func (s *conversationHumanDispatchService) markHandoff(conversationID int64, aiA
 	now := time.Now()
 	trimmedReason := strings.TrimSpace(reason)
 	return sqls.WithTransaction(func(ctx *sqls.TxContext) error {
+		item, err := repositories.LockConversationWork(ctx.Tx, conversationID)
+		if err != nil {
+			return err
+		}
+		if item.WorkStatus != enums.ConversationWorkStatusNeedsReply {
+			if err := repositories.UpdateConversationWork(ctx.Tx, item, map[string]any{"work_status": enums.ConversationWorkStatusNeedsReply, "pending_since": now, "reply_due_at": now.Add(time.Duration(replyTarget(item)) * time.Minute), "snoozed_until": nil, "reminder_revision": 0}); err != nil {
+				return err
+			}
+		}
 		if err := repositories.ConversationRepository.Updates(ctx.Tx, conversationID, map[string]any{
 			"handoff_at":          now,
 			"handoff_reason":      trimmedReason,

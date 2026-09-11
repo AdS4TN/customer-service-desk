@@ -34,10 +34,10 @@ func buildFAQChunkModel(knowledgeBase models.KnowledgeBase, faq models.Knowledge
 	}, chunkID
 }
 
-func (s *index) prepareFAQVector(ctx context.Context, knowledgeBase models.KnowledgeBase, faq models.KnowledgeFAQ, content string) (vectordb.Vector, models.KnowledgeChunk, int, error) {
+func (s *index) prepareFAQVector(ctx context.Context, knowledgeBase models.KnowledgeBase, faq models.KnowledgeFAQ, content string) (vectordb.Vector, int, error) {
 	embeddingResult, err := ai.Embedding.GenerateEmbedding(ctx, content)
 	if err != nil {
-		return vectordb.Vector{}, models.KnowledgeChunk{}, 0, fmt.Errorf("failed to generate embedding for faq %d: %w", faq.ID, err)
+		return vectordb.Vector{}, 0, fmt.Errorf("failed to generate embedding for faq %d: %w", faq.ID, err)
 	}
 
 	chunkModel, chunkID := buildFAQChunkModel(knowledgeBase, faq, content)
@@ -57,5 +57,5 @@ func (s *index) prepareFAQVector(ctx context.Context, knowledgeBase models.Knowl
 			Provider:        string(enums.KnowledgeChunkProviderFAQ),
 		},
 	}
-	return vector, chunkModel, embeddingResult.Dimension, nil
+	return vector, embeddingResult.Dimension, nil
 }

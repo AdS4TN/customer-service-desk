@@ -318,6 +318,21 @@ func (s *wsService) PublishMessageCreated(conversation *models.Conversation, mes
 	s.PublishToTopics(s.routeConversationTopics(conversation), event)
 }
 
+func (s *wsService) PublishMessageStream(conversation *models.Conversation, eventType, requestID, content string) {
+	if conversation == nil || conversation.ID <= 0 || strings.TrimSpace(requestID) == "" {
+		return
+	}
+	event := s.newEvent(s.conversationTopic(conversation.ID), RealtimeMessageStreamEvent{
+		Type: eventType,
+		Payload: RealtimeMessageStreamPayload{
+			ConversationID: conversation.ID,
+			RequestID:      strings.TrimSpace(requestID),
+			Content:        content,
+		},
+	})
+	s.PublishToTopics(s.routeConversationTopics(conversation), event)
+}
+
 func (s *wsService) buildRealtimeMessage(item *models.Message) response.MessageResponse {
 	if item == nil {
 		return response.MessageResponse{}
@@ -426,6 +441,12 @@ func (s *wsService) PublishConversationChanged(conversation *models.Conversation
 	event := s.newEvent(s.conversationTopic(conversation.ID), RealtimeConversationChangedEvent{
 		Type: eventType,
 		Payload: RealtimeConversationChangedPayload{
+			WorkStatus:                conversation.WorkStatus,
+			WorkRevision:              conversation.WorkRevision,
+			PendingSince:              formatWsTime(conversation.PendingSince),
+			ReplyDueAt:                formatWsTime(conversation.ReplyDueAt),
+			SnoozedUntil:              formatWsTime(conversation.SnoozedUntil),
+			ReplyTargetMinutes:        conversation.ReplyTargetMinutes,
 			ConversationID:            conversation.ID,
 			Status:                    conversation.Status,
 			ServiceMode:               conversation.ServiceMode,

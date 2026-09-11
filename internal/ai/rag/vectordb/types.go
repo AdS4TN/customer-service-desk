@@ -10,6 +10,7 @@ type Vector struct {
 
 type SearchRequest struct {
 	CollectionName string        `json:"collectionName"`
+	Query          string        `json:"query,omitempty"`
 	Vector         []float32     `json:"vector"`
 	TopK           int           `json:"topK"`
 	ScoreThreshold float32       `json:"scoreThreshold"`
@@ -19,6 +20,7 @@ type SearchRequest struct {
 type SearchFilter struct {
 	KnowledgeBaseIDs []int64 `json:"knowledgeBaseIds,omitempty"`
 	DocumentIDs      []int64 `json:"documentIds,omitempty"`
+	FAQIDs           []int64 `json:"faqIds,omitempty"`
 }
 
 type SearchResult struct {
@@ -42,6 +44,8 @@ type Provider interface {
 
 	UpsertVectors(ctx context.Context, collectionName string, vectors []Vector) error
 	DeleteVectors(ctx context.Context, collectionName string, ids []string) error
+	DeleteVectorsByFilter(ctx context.Context, collectionName string, filter *SearchFilter) error
+	CountVectors(ctx context.Context, collectionName string, filter *SearchFilter) (int64, error)
 
 	Search(ctx context.Context, req *SearchRequest) ([]SearchResult, error)
 	Close() error

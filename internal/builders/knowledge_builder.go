@@ -23,6 +23,8 @@ func BuildKnowledgeBase(item *models.KnowledgeBase) response.KnowledgeBaseRespon
 		ChunkTargetTokens:     item.ChunkTargetTokens,
 		ChunkMaxTokens:        item.ChunkMaxTokens,
 		ChunkOverlapTokens:    item.ChunkOverlapTokens,
+		ParentChunkTokens:     item.ParentChunkTokens,
+		ChildChunkTokens:      item.ChildChunkTokens,
 		AnswerMode:            item.AnswerMode,
 		AnswerModeName:        enums.GetKnowledgeAnswerModeLabel(enums.KnowledgeAnswerMode(item.AnswerMode)),
 		Remark:                item.Remark,
@@ -35,45 +37,78 @@ func BuildKnowledgeBase(item *models.KnowledgeBase) response.KnowledgeBaseRespon
 
 func BuildKnowledgeDocument(item *models.KnowledgeDocument) response.KnowledgeDocumentResponse {
 	return response.KnowledgeDocumentResponse{
-		ID:              item.ID,
-		KnowledgeBaseID: item.KnowledgeBaseID,
-		DirectoryID:     item.DirectoryID,
-		Title:           item.Title,
-		Status:          item.Status,
-		StatusName:      enums.GetStatusLabel(item.Status),
-		IndexStatus:     item.IndexStatus,
-		IndexStatusName: enums.GetKnowledgeDocumentIndexStatusLabel(item.IndexStatus),
-		IndexedAt:       item.IndexedAt,
-		IndexError:      item.IndexError,
-		ContentHash:     item.ContentHash,
-		ContentType:     item.ContentType,
-		Content:         item.Content,
-		CreatedAt:       item.CreatedAt,
-		UpdatedAt:       item.UpdatedAt,
-		CreateUserName:  item.CreateUserName,
-		UpdateUserName:  item.UpdateUserName,
+		ID:                  item.ID,
+		KnowledgeBaseID:     item.KnowledgeBaseID,
+		DirectoryID:         item.DirectoryID,
+		Title:               item.Title,
+		Status:              item.Status,
+		StatusName:          enums.GetStatusLabel(item.Status),
+		IndexStatus:         item.IndexStatus,
+		IndexStatusName:     enums.GetKnowledgeDocumentIndexStatusLabel(item.IndexStatus),
+		IndexedAt:           item.IndexedAt,
+		IndexError:          item.IndexError,
+		ContentHash:         item.ContentHash,
+		ChunkConfigOverride: item.ChunkConfigOverride,
+		ChunkProvider:       item.ChunkProvider,
+		ChunkTargetTokens:   item.ChunkTargetTokens,
+		ChunkMaxTokens:      item.ChunkMaxTokens,
+		ChunkOverlapTokens:  item.ChunkOverlapTokens,
+		ParentChunkTokens:   item.ParentChunkTokens,
+		ChildChunkTokens:    item.ChildChunkTokens,
+		ContentType:         item.ContentType,
+		Content:             item.Content,
+		CreatedAt:           item.CreatedAt,
+		UpdatedAt:           item.UpdatedAt,
+		CreateUserName:      item.CreateUserName,
+		UpdateUserName:      item.UpdateUserName,
 	}
 }
 
 func BuildKnowledgeDocumentList(item *models.KnowledgeDocument) response.KnowledgeDocumentListResponse {
 	return response.KnowledgeDocumentListResponse{
-		ID:              item.ID,
-		KnowledgeBaseID: item.KnowledgeBaseID,
-		DirectoryID:     item.DirectoryID,
-		Title:           item.Title,
-		Status:          item.Status,
-		StatusName:      enums.GetStatusLabel(item.Status),
-		IndexStatus:     item.IndexStatus,
-		IndexStatusName: enums.GetKnowledgeDocumentIndexStatusLabel(item.IndexStatus),
-		IndexedAt:       item.IndexedAt,
-		IndexError:      item.IndexError,
-		ContentHash:     item.ContentHash,
-		ContentType:     item.ContentType,
-		CreatedAt:       item.CreatedAt,
-		UpdatedAt:       item.UpdatedAt,
-		CreateUserName:  item.CreateUserName,
-		UpdateUserName:  item.UpdateUserName,
+		ID:                  item.ID,
+		KnowledgeBaseID:     item.KnowledgeBaseID,
+		DirectoryID:         item.DirectoryID,
+		Title:               item.Title,
+		Status:              item.Status,
+		StatusName:          enums.GetStatusLabel(item.Status),
+		IndexStatus:         item.IndexStatus,
+		IndexStatusName:     enums.GetKnowledgeDocumentIndexStatusLabel(item.IndexStatus),
+		IndexedAt:           item.IndexedAt,
+		IndexError:          item.IndexError,
+		ContentHash:         item.ContentHash,
+		ChunkConfigOverride: item.ChunkConfigOverride,
+		ChunkProvider:       item.ChunkProvider,
+		ChunkTargetTokens:   item.ChunkTargetTokens,
+		ChunkMaxTokens:      item.ChunkMaxTokens,
+		ChunkOverlapTokens:  item.ChunkOverlapTokens,
+		ParentChunkTokens:   item.ParentChunkTokens,
+		ChildChunkTokens:    item.ChildChunkTokens,
+		ContentType:         item.ContentType,
+		CreatedAt:           item.CreatedAt,
+		UpdatedAt:           item.UpdatedAt,
+		CreateUserName:      item.CreateUserName,
+		UpdateUserName:      item.UpdateUserName,
 	}
+}
+
+func BuildKnowledgeIngestionJob(item *models.KnowledgeIngestionJob, document *models.KnowledgeDocument, asset *models.Asset) response.KnowledgeIngestionJobResponse {
+	result := response.KnowledgeIngestionJobResponse{
+		ID: item.ID, KnowledgeBaseID: item.KnowledgeBaseID, DocumentID: item.DocumentID,
+		AssetID: item.AssetID, Status: item.Status, Stage: item.Stage, Parser: item.Parser,
+		ChunkCount: item.ChunkCount, Progress: item.Progress, ParseMS: item.ParseMS,
+		ChunkMS: item.ChunkMS, EmbeddingMS: item.EmbeddingMS, IndexMS: item.IndexMS,
+		Attempts: item.Attempts, Error: item.Error, StartedAt: item.StartedAt,
+		FinishedAt: item.FinishedAt, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
+	}
+	if document != nil {
+		result.Title = document.Title
+	}
+	if asset != nil {
+		result.Filename = asset.Filename
+		result.FileSize = asset.FileSize
+	}
+	return result
 }
 
 func BuildKnowledgeFAQ(item *models.KnowledgeFAQ) response.KnowledgeFAQResponse {

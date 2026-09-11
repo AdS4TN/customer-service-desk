@@ -51,6 +51,12 @@ func (e *replyEligibility) CanReply(conversation models.Conversation, message mo
 	if message.SenderType != enums.IMSenderTypeCustomer {
 		return false
 	}
+	if message.IsHistorical || message.RecalledAt != nil || message.SendStatus == enums.IMMessageStatusRecalled || message.SendStatus == enums.IMMessageStatusFailed || message.SendStatus == enums.IMMessageStatusSending {
+		return false
+	}
+	if conversation.Status == enums.IMConversationStatusClosed {
+		return false
+	}
 	if conversation.HandoffAt != nil || conversation.CurrentAssigneeID > 0 {
 		return false
 	}

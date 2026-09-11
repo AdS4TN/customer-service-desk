@@ -1,6 +1,7 @@
 import MarkdownIt from "markdown-it"
 
 import { translateCurrentMessage } from "@/i18n/messages"
+import { linkedKind, parseLinkedMessage } from "@/lib/linked-message"
 
 export type MessageAssetPayload = {
   assetId: string
@@ -76,6 +77,8 @@ export function summarizeIMMessage(message: {
   content: string
   payload?: string
 }) {
+  const linked = parseLinkedMessage(message.payload)
+  if (linked) return `${t(`linkedMessage.${linkedKind(linked.kind)}`)}${message.content ? ` ${message.content.substring(0, 80)}` : ""}`
   if (message.messageType === "image") {
     return t("supportChat.imageSummary")
   }

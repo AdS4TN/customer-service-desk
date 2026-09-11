@@ -119,6 +119,8 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(req request.UpdateKnowledgeBa
 		"chunk_target_tokens":     item.ChunkTargetTokens,
 		"chunk_max_tokens":        item.ChunkMaxTokens,
 		"chunk_overlap_tokens":    item.ChunkOverlapTokens,
+		"parent_chunk_tokens":     item.ParentChunkTokens,
+		"child_chunk_tokens":      item.ChildChunkTokens,
 		"answer_mode":             item.AnswerMode,
 		"remark":                  item.Remark,
 		"update_user_id":          operator.UserID,
@@ -248,6 +250,7 @@ func (s *knowledgeBaseService) UpdateSort(ids []int64) error {
 }
 
 func (s *knowledgeBaseService) buildKnowledgeBaseModel(req request.CreateKnowledgeBaseRequest) (*models.KnowledgeBase, error) {
+	providerWasEmpty := req.ChunkProvider == ""
 	item := &models.KnowledgeBase{
 		Name:                  req.Name,
 		Description:           req.Description,
@@ -259,6 +262,8 @@ func (s *knowledgeBaseService) buildKnowledgeBaseModel(req request.CreateKnowled
 		ChunkTargetTokens:     req.ChunkTargetTokens,
 		ChunkMaxTokens:        req.ChunkMaxTokens,
 		ChunkOverlapTokens:    req.ChunkOverlapTokens,
+		ParentChunkTokens:     req.ParentChunkTokens,
+		ChildChunkTokens:      req.ChildChunkTokens,
 		AnswerMode:            req.AnswerMode,
 		Remark:                req.Remark,
 	}
@@ -300,8 +305,20 @@ func (s *knowledgeBaseService) buildKnowledgeBaseModel(req request.CreateKnowled
 	if item.KnowledgeType != string(enums.KnowledgeBaseTypeFAQ) && item.ChunkMaxTokens < item.ChunkTargetTokens {
 		item.ChunkMaxTokens = item.ChunkTargetTokens
 	}
-	if item.KnowledgeType != string(enums.KnowledgeBaseTypeFAQ) && item.ChunkOverlapTokens == 0 {
+	if item.KnowledgeType != string(enums.KnowledgeBaseTypeFAQ) && providerWasEmpty && item.ChunkOverlapTokens == 0 {
 		item.ChunkOverlapTokens = 40
+	}
+	if item.KnowledgeType != string(enums.KnowledgeBaseTypeFAQ) && (item.ChunkOverlapTokens < 0 || item.ChunkOverlapTokens >= item.ChunkMaxTokens) {
+		return nil, errorsx.InvalidParamI18n("error.e0130")
+	}
+	if item.ParentChunkTokens <= 0 {
+		item.ParentChunkTokens = 900
+	}
+	if item.ChildChunkTokens <= 0 {
+		item.ChildChunkTokens = 200
+	}
+	if item.ParentChunkTokens < item.ChildChunkTokens {
+		item.ParentChunkTokens = item.ChildChunkTokens
 	}
 	if item.AnswerMode == 0 {
 		item.AnswerMode = 1
@@ -313,8 +330,9 @@ func isValidChunkProvider(provider string) bool {
 	switch provider {
 	case string(enums.KnowledgeChunkProviderFixed),
 		string(enums.KnowledgeChunkProviderStructured),
-		string(enums.KnowledgeChunkProviderFAQ),
-		string(enums.KnowledgeChunkProviderSemantic):
+		string(enums.KnowledgeChunkProviderRecursive),
+		string(enums.KnowledgeChunkProviderParentChild),
+		string(enums.KnowledgeChunkProviderFAQ):
 		return true
 	default:
 		return false

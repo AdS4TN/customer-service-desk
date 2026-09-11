@@ -9,6 +9,7 @@ export type RealtimeConversation = AgentConversation | ImConversation
 export type RealtimeMessageCreatedPayload<TMessage extends RealtimeMessage> = {
   conversationId?: number
   messageId?: number
+  requestId?: string
   message?: TMessage
   senderType?: string
   senderId?: number
@@ -42,6 +43,7 @@ export function normalizeRealtimeMessage<TMessage extends RealtimeMessage>(
   return {
     id,
     conversationId,
+    requestId: payload.requestId,
     senderType: payload.senderType ?? "",
     senderId: payload.senderId ?? 0,
     senderName: payload.senderName,
@@ -112,6 +114,9 @@ export function patchConversationWithMessage<
   TMessage extends RealtimeMessage,
 >(conversation: TConversation | null, message: TMessage | null | undefined) {
   if (!conversation || !message || conversation.id !== message.conversationId) {
+    return conversation
+  }
+  if (message.sentAt && conversation.lastMessageAt && Date.parse(message.sentAt) < Date.parse(conversation.lastMessageAt)) {
     return conversation
   }
   return {

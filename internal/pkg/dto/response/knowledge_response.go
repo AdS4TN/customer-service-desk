@@ -20,6 +20,8 @@ type KnowledgeBaseResponse struct {
 	ChunkTargetTokens     int          `json:"chunkTargetTokens"`
 	ChunkMaxTokens        int          `json:"chunkMaxTokens"`
 	ChunkOverlapTokens    int          `json:"chunkOverlapTokens"`
+	ParentChunkTokens     int          `json:"parentChunkTokens"`
+	ChildChunkTokens      int          `json:"childChunkTokens"`
 	AnswerMode            int          `json:"answerMode"`
 	AnswerModeName        string       `json:"answerModeName"`
 	DocumentCount         int64        `json:"documentCount"`
@@ -32,48 +34,109 @@ type KnowledgeBaseResponse struct {
 }
 
 type KnowledgeDocumentResponse struct {
-	ID                int64                              `json:"id"`
-	KnowledgeBaseID   int64                              `json:"knowledgeBaseId"`
-	KnowledgeBaseName string                             `json:"knowledgeBaseName,omitempty"`
-	DirectoryID       int64                              `json:"directoryId"`
-	DirectoryName     string                             `json:"directoryName,omitempty"`
-	DirectoryPath     string                             `json:"directoryPath,omitempty"`
-	Title             string                             `json:"title"`
-	ContentType       enums.KnowledgeDocumentContentType `json:"contentType"`
-	Content           string                             `json:"content"`
-	Status            enums.Status                       `json:"status"`
-	StatusName        string                             `json:"statusName"`
-	IndexStatus       enums.KnowledgeDocumentIndexStatus `json:"indexStatus"`
-	IndexStatusName   string                             `json:"indexStatusName"`
-	IndexedAt         *time.Time                         `json:"indexedAt"`
-	IndexError        string                             `json:"indexError"`
-	ContentHash       string                             `json:"contentHash"`
-	CreatedAt         time.Time                          `json:"createdAt"`
-	UpdatedAt         time.Time                          `json:"updatedAt"`
-	CreateUserName    string                             `json:"createUserName"`
-	UpdateUserName    string                             `json:"updateUserName"`
+	ID                  int64                              `json:"id"`
+	KnowledgeBaseID     int64                              `json:"knowledgeBaseId"`
+	KnowledgeBaseName   string                             `json:"knowledgeBaseName,omitempty"`
+	DirectoryID         int64                              `json:"directoryId"`
+	DirectoryName       string                             `json:"directoryName,omitempty"`
+	DirectoryPath       string                             `json:"directoryPath,omitempty"`
+	Title               string                             `json:"title"`
+	ContentType         enums.KnowledgeDocumentContentType `json:"contentType"`
+	Content             string                             `json:"content"`
+	Status              enums.Status                       `json:"status"`
+	StatusName          string                             `json:"statusName"`
+	IndexStatus         enums.KnowledgeDocumentIndexStatus `json:"indexStatus"`
+	IndexStatusName     string                             `json:"indexStatusName"`
+	IndexedAt           *time.Time                         `json:"indexedAt"`
+	IndexError          string                             `json:"indexError"`
+	ContentHash         string                             `json:"contentHash"`
+	ChunkConfigOverride bool                               `json:"chunkConfigOverride"`
+	ChunkProvider       string                             `json:"chunkProvider"`
+	ChunkTargetTokens   int                                `json:"chunkTargetTokens"`
+	ChunkMaxTokens      int                                `json:"chunkMaxTokens"`
+	ChunkOverlapTokens  int                                `json:"chunkOverlapTokens"`
+	ParentChunkTokens   int                                `json:"parentChunkTokens"`
+	ChildChunkTokens    int                                `json:"childChunkTokens"`
+	CreatedAt           time.Time                          `json:"createdAt"`
+	UpdatedAt           time.Time                          `json:"updatedAt"`
+	CreateUserName      string                             `json:"createUserName"`
+	UpdateUserName      string                             `json:"updateUserName"`
 }
 
 type KnowledgeDocumentListResponse struct {
-	ID                int64                              `json:"id"`
-	KnowledgeBaseID   int64                              `json:"knowledgeBaseId"`
-	KnowledgeBaseName string                             `json:"knowledgeBaseName,omitempty"`
-	DirectoryID       int64                              `json:"directoryId"`
-	DirectoryName     string                             `json:"directoryName,omitempty"`
-	DirectoryPath     string                             `json:"directoryPath,omitempty"`
-	Title             string                             `json:"title"`
-	ContentType       enums.KnowledgeDocumentContentType `json:"contentType"`
-	Status            enums.Status                       `json:"status"`
-	StatusName        string                             `json:"statusName"`
-	IndexStatus       enums.KnowledgeDocumentIndexStatus `json:"indexStatus"`
-	IndexStatusName   string                             `json:"indexStatusName"`
-	IndexedAt         *time.Time                         `json:"indexedAt"`
-	IndexError        string                             `json:"indexError"`
-	ContentHash       string                             `json:"contentHash"`
-	CreatedAt         time.Time                          `json:"createdAt"`
-	UpdatedAt         time.Time                          `json:"updatedAt"`
-	CreateUserName    string                             `json:"createUserName"`
-	UpdateUserName    string                             `json:"updateUserName"`
+	ID                  int64                              `json:"id"`
+	KnowledgeBaseID     int64                              `json:"knowledgeBaseId"`
+	KnowledgeBaseName   string                             `json:"knowledgeBaseName,omitempty"`
+	DirectoryID         int64                              `json:"directoryId"`
+	DirectoryName       string                             `json:"directoryName,omitempty"`
+	DirectoryPath       string                             `json:"directoryPath,omitempty"`
+	Title               string                             `json:"title"`
+	ContentType         enums.KnowledgeDocumentContentType `json:"contentType"`
+	Status              enums.Status                       `json:"status"`
+	StatusName          string                             `json:"statusName"`
+	IndexStatus         enums.KnowledgeDocumentIndexStatus `json:"indexStatus"`
+	IndexStatusName     string                             `json:"indexStatusName"`
+	IndexedAt           *time.Time                         `json:"indexedAt"`
+	IndexError          string                             `json:"indexError"`
+	ContentHash         string                             `json:"contentHash"`
+	ChunkConfigOverride bool                               `json:"chunkConfigOverride"`
+	ChunkProvider       string                             `json:"chunkProvider"`
+	ChunkTargetTokens   int                                `json:"chunkTargetTokens"`
+	ChunkMaxTokens      int                                `json:"chunkMaxTokens"`
+	ChunkOverlapTokens  int                                `json:"chunkOverlapTokens"`
+	ParentChunkTokens   int                                `json:"parentChunkTokens"`
+	ChildChunkTokens    int                                `json:"childChunkTokens"`
+	CreatedAt           time.Time                          `json:"createdAt"`
+	UpdatedAt           time.Time                          `json:"updatedAt"`
+	CreateUserName      string                             `json:"createUserName"`
+	UpdateUserName      string                             `json:"updateUserName"`
+}
+
+type KnowledgeChunkPreviewResponse struct {
+	ChunkNo        int                      `json:"chunkNo"`
+	Title          string                   `json:"title"`
+	Content        string                   `json:"content"`
+	ContextContent string                   `json:"contextContent,omitempty"`
+	ChunkType      enums.KnowledgeChunkType `json:"chunkType"`
+	SectionPath    string                   `json:"sectionPath"`
+	CharCount      int                      `json:"charCount"`
+	TokenCount     int                      `json:"tokenCount"`
+}
+
+type KnowledgeDocumentChunkPreviewResponse struct {
+	Provider      string                          `json:"provider"`
+	TargetTokens  int                             `json:"targetTokens"`
+	MaxTokens     int                             `json:"maxTokens"`
+	OverlapTokens int                             `json:"overlapTokens"`
+	ParentTokens  int                             `json:"parentTokens"`
+	ChildTokens   int                             `json:"childTokens"`
+	ChunkCount    int                             `json:"chunkCount"`
+	Chunks        []KnowledgeChunkPreviewResponse `json:"chunks"`
+}
+
+type KnowledgeIngestionJobResponse struct {
+	ID              int64      `json:"id"`
+	KnowledgeBaseID int64      `json:"knowledgeBaseId"`
+	DocumentID      int64      `json:"documentId"`
+	AssetID         int64      `json:"assetId"`
+	Filename        string     `json:"filename"`
+	FileSize        int64      `json:"fileSize"`
+	Title           string     `json:"title"`
+	Status          string     `json:"status"`
+	Stage           string     `json:"stage"`
+	Parser          string     `json:"parser"`
+	ChunkCount      int        `json:"chunkCount"`
+	Progress        int        `json:"progress"`
+	ParseMS         int64      `json:"parseMs"`
+	ChunkMS         int64      `json:"chunkMs"`
+	EmbeddingMS     int64      `json:"embeddingMs"`
+	IndexMS         int64      `json:"indexMs"`
+	Attempts        int        `json:"attempts"`
+	Error           string     `json:"error"`
+	StartedAt       *time.Time `json:"startedAt"`
+	FinishedAt      *time.Time `json:"finishedAt"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
 }
 
 type KnowledgeFAQResponse struct {
@@ -146,6 +209,7 @@ type KnowledgeSearchResult struct {
 	Title           string  `json:"title"`
 	SectionPath     string  `json:"sectionPath"`
 	Content         string  `json:"content"`
+	MatchedContent  string  `json:"matchedContent,omitempty"`
 	Score           float64 `json:"score"`
 	RerankScore     float64 `json:"rerankScore"`
 }

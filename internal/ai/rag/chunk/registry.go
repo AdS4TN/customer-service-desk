@@ -19,7 +19,9 @@ func NewRegistry() *Registry {
 func NewDefaultRegistry() *Registry {
 	r := NewRegistry()
 	r.Register(NewFixedProvider())
+	r.Register(NewRecursiveProvider())
 	r.Register(NewStructuredProvider())
+	r.Register(NewParentChildProvider())
 	return r
 }
 
@@ -44,7 +46,7 @@ func (r *Registry) Resolve(name string, contentType enums.KnowledgeDocumentConte
 	if p := r.Get(string(enums.KnowledgeChunkProviderStructured)); p != nil && p.Supports(contentType) {
 		return p
 	}
-	return r.Get(string(enums.KnowledgeChunkProviderFixed))
+	return r.Get(string(enums.KnowledgeChunkProviderRecursive))
 }
 
 func (r *Registry) Chunk(ctx context.Context, req *ChunkRequest) ([]ChunkResult, error) {

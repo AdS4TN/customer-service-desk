@@ -3,13 +3,15 @@ package enums
 type VectorDBType string
 
 const (
-	VectorDBTypeQdrant  VectorDBType = "qdrant"
-	VectorDBTypeLanceDB VectorDBType = "lancedb"
+	VectorDBTypeQdrant        VectorDBType = "qdrant"
+	VectorDBTypeLanceDB       VectorDBType = "lancedb"
+	VectorDBTypeElasticsearch VectorDBType = "elasticsearch"
 )
 
 var vectorDBTypeLabelMap = map[VectorDBType]string{
-	VectorDBTypeQdrant:  "Qdrant",
-	VectorDBTypeLanceDB: "LanceDB",
+	VectorDBTypeQdrant:        "Qdrant",
+	VectorDBTypeLanceDB:       "LanceDB",
+	VectorDBTypeElasticsearch: "Elasticsearch",
 }
 
 func GetVectorDBTypeLabel(dbType VectorDBType) string {
@@ -104,17 +106,19 @@ func GetKnowledgeChunkTypeLabel(chunkType KnowledgeChunkType) string {
 type KnowledgeChunkProvider string
 
 const (
-	KnowledgeChunkProviderFixed      KnowledgeChunkProvider = "fixed"
-	KnowledgeChunkProviderStructured KnowledgeChunkProvider = "structured"
-	KnowledgeChunkProviderFAQ        KnowledgeChunkProvider = "faq"
-	KnowledgeChunkProviderSemantic   KnowledgeChunkProvider = "semantic"
+	KnowledgeChunkProviderFixed       KnowledgeChunkProvider = "fixed"
+	KnowledgeChunkProviderStructured  KnowledgeChunkProvider = "structured"
+	KnowledgeChunkProviderRecursive   KnowledgeChunkProvider = "recursive"
+	KnowledgeChunkProviderParentChild KnowledgeChunkProvider = "parent_child"
+	KnowledgeChunkProviderFAQ         KnowledgeChunkProvider = "faq"
 )
 
 var knowledgeChunkProviderLabelMap = map[KnowledgeChunkProvider]string{
-	KnowledgeChunkProviderFixed:      "固定长度",
-	KnowledgeChunkProviderStructured: "结构化分块",
-	KnowledgeChunkProviderFAQ:        "问答式分块",
-	KnowledgeChunkProviderSemantic:   "语义分块",
+	KnowledgeChunkProviderFixed:       "固定长度",
+	KnowledgeChunkProviderStructured:  "结构化分块",
+	KnowledgeChunkProviderRecursive:   "递归分块",
+	KnowledgeChunkProviderParentChild: "父子分块",
+	KnowledgeChunkProviderFAQ:         "问答式分块",
 }
 
 func GetKnowledgeChunkProviderLabel(provider KnowledgeChunkProvider) string {

@@ -150,9 +150,10 @@ type OSSStorageConfig struct {
 }
 
 type VectorDBConfig struct {
-	Type    string                `yaml:"type"`
-	Qdrant  QdrantVectorDBConfig  `yaml:"qdrant"`
-	LanceDB LanceDBVectorDBConfig `yaml:"lancedb"`
+	Type          string                      `yaml:"type"`
+	Qdrant        QdrantVectorDBConfig        `yaml:"qdrant"`
+	LanceDB       LanceDBVectorDBConfig       `yaml:"lancedb"`
+	Elasticsearch ElasticsearchVectorDBConfig `yaml:"elasticsearch"`
 }
 
 type QdrantVectorDBConfig struct {
@@ -164,6 +165,15 @@ type QdrantVectorDBConfig struct {
 
 type LanceDBVectorDBConfig struct {
 	Path string `yaml:"path"`
+}
+
+type ElasticsearchVectorDBConfig struct {
+	URL              string `yaml:"url"`
+	Username         string `yaml:"username"`
+	Password         string `yaml:"password"`
+	APIKey           string `yaml:"apiKey"`
+	IndexPrefix      string `yaml:"indexPrefix"`
+	NumberOfReplicas int    `yaml:"numberOfReplicas"`
 }
 
 type MCPConfig struct {

@@ -48,9 +48,7 @@ function WxWorkLoginCallbackContent() {
       })
   }, [router, searchParams, t])
 
-  return (
-    <WxWorkLoginCallbackFallback />
-  )
+  return <WxWorkLoginCallbackFallback />
 }
 
 function WxWorkLoginCallbackFallback() {

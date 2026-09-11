@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises"
 import vm from "node:vm"
 
 async function loadModule() {
+  const messages = JSON.parse(await readFile(new URL("../messages/en-US.json", import.meta.url), "utf8"))
   const source = await readFile(new URL("./notification-i18n.ts", import.meta.url), "utf8")
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
@@ -18,8 +19,9 @@ async function loadModule() {
     module: { exports: {} },
     require: (id) => {
       if (id === "@/i18n/config") {
-        return { DEFAULT_LOCALE: "zh-CN" }
+        return { normalizeLocale: (locale) => locale === "en-US" ? "en-US" : "zh-CN" }
       }
+      if (id === "@/i18n/messages") return { translateMessage: (_locale, key, values = {}) => key.split(".").reduce((value, part) => value[part], messages).replace(/\{([^}]+)\}/g, (_, name) => String(values[name])) }
       throw new Error(`unexpected import ${id}`)
     },
   }

@@ -12,6 +12,7 @@ import {
   type DashboardCrudFilter,
 } from "@/components/dashboard/crud";
 import { ProjectDialog } from "@/components/project-dialog";
+import { useConfirm } from "@/components/confirm-provider";
 import { Badge } from "@/components/ui/badge";
 import {
   createAIAgent,
@@ -64,10 +65,19 @@ function getNextStatus(item: AIAgent) {
 
 export default function DashboardAIAgentsPage() {
   const t = useI18n();
+  const confirm = useConfirm();
+  const [policyState, setPolicyState] = useState({ dirty: false, saving: false });
   const statusOptions = useMemo(() => getStatusOptions(t), [t]);
   const [configAgentId, setConfigAgentId] = useState<number | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [crudActions, setCrudActions] = useState<DashboardCrudActionState | null>(null);
+
+  async function changeConfigOpen(open: boolean) {
+    if (!open && policyState.saving) return;
+    if (!open && policyState.dirty && !await confirm({ title: t("reception.discardTitle"), description: t("reception.discardDescription"), confirmText: t("reception.discard") })) return;
+    setConfigOpen(open);
+    if (!open) { setConfigAgentId(null); setPolicyState({ dirty: false, saving: false }); }
+  }
 
   const filters = useMemo<DashboardCrudFilter[]>(
     () => [
@@ -311,10 +321,7 @@ export default function DashboardAIAgentsPage() {
       />
       <ProjectDialog
         open={configOpen}
-        onOpenChange={(open) => {
-          setConfigOpen(open);
-          if (!open) setConfigAgentId(null);
-        }}
+        onOpenChange={(open) => { void changeConfigOpen(open); }}
         title={t("aiAgent.configure")}
         size="xxl"
         allowFullscreen
@@ -328,7 +335,8 @@ export default function DashboardAIAgentsPage() {
             agentId={configAgentId}
             onAgentCreated={(agent) => setConfigAgentId(agent.id)}
             onAgentSaved={() => crudActions?.onRefresh()}
-            onCancel={() => setConfigOpen(false)}
+            onPolicyStateChange={setPolicyState}
+            onCancel={() => { void changeConfigOpen(false); }}
           />
         ) : null}
       </ProjectDialog>

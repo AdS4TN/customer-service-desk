@@ -15,6 +15,7 @@ import {
   TimerIcon,
   UserCheckIcon,
   WorkflowIcon,
+  RotateCwIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -26,6 +27,8 @@ import {
 } from "@/components/chat/conversation-message-scroller";
 import { ConversationMessageBubble } from "@/components/chat/conversation-message-bubble";
 import { ImMessageHTML } from "@/components/im-message-html";
+import { LinkedMessageContent } from "@/components/chat/linked-message-content";
+import { parseLinkedMessage } from "@/lib/linked-message";
 import { useImageLightbox } from "@/components/image-lightbox";
 import { JsonTreeViewer } from "@/components/json-tree-viewer";
 import { ProjectDialog } from "@/components/project-dialog";
@@ -49,6 +52,7 @@ import {
 import { useIsLgUp } from "@/hooks/use-lg-media";
 import {
   assignAgentConversation,
+  retryAgentMessage,
   type AgentMessage,
 } from "@/lib/api/agent";
 import {
@@ -61,10 +65,12 @@ import { renderIMMessageHTML } from "@/lib/im-message";
 import {
   agentConversationSelectors,
   useAgentConversationsStore,
-  type AgentConversationFilterKey,
 } from "@/lib/stores/agent-conversations";
 import { formatDateTime } from "@/lib/utils";
 import { AgentMessageEditor } from "./agent-message-editor";
+import { ReceptionWorkbar } from "./reception-workbar";
+import { MessageTranslation, TranslationToolbar } from "./conversation-translation";
+import { IMMessageStatus } from "@/lib/generated/enums";
 
 const EMPTY_AGENT_MESSAGES: AgentMessage[] = [];
 
@@ -159,10 +165,6 @@ export function ChatPanel() {
   const messagesLoadingMore = useAgentConversationsStore(
     (state) => state.messagesLoadingMore,
   );
-  const conversationFilter = useAgentConversationsStore((state) => state.conversationFilter);
-  const setConversationFilter = useAgentConversationsStore(
-    (state) => state.setConversationFilter,
-  );
   const messagesScrollerRef = useRef<ConversationMessageScrollerHandle | null>(
     null,
   );
@@ -179,13 +181,11 @@ export function ChatPanel() {
   const isPendingConversation = conversation?.status === 2;
   const showMessageEditor = !isClosedConversation && !isPendingConversation;
   const currentUserId = readSession()?.user?.id ?? 0;
-
-  const switchToMyActiveIfNeeded = () => {
-    if (conversationFilter !== "pending") {
-      return;
-    }
-    setConversationFilter("active" satisfies AgentConversationFilterKey);
-  };
+  const channel = useAgentConversationsStore((state) => state.channels.find((item) => item.id === conversation?.channelId));
+  const isWhatsApp = channel?.channelType === "whatsapp" || channel?.channelType === "messenger";
+  const ownsConversation = conversation?.currentAssigneeId === currentUserId;
+  const disconnected = isWhatsApp && channel?.connectionState !== "connected";
+  const [retryingId, setRetryingId] = useState(0);
 
   const scrollToBottom = useCallback(() => {
     messagesScrollerRef.current?.scrollToBottom();
@@ -256,12 +256,13 @@ export function ChatPanel() {
   };
 
   const handleSend = async (html: string) => {
-    if (!conversation || sending || isClosedConversation) return;
+    if (!conversation || sending || isClosedConversation || useAgentConversationsStore.getState().selectedConversationId !== conversation.id) throw new Error(t("translation.stale"));
     try {
       shouldStickToBottomRef.current = true;
-      await sendMessage(html);
+      if (!await sendMessage(html)) throw new Error(t("conversation.sendMessageFailed"));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("conversation.sendMessageFailed"));
+      throw error;
     }
   };
 
@@ -281,7 +282,6 @@ export function ChatPanel() {
         t("conversation.claimReason"),
       );
 
-      switchToMyActiveIfNeeded();
       setClaimDialogOpen(false);
       toast.success(t("conversation.claimSuccess"));
       await reloadConversationData(conversation.id);
@@ -311,7 +311,7 @@ export function ChatPanel() {
         setWorkflowRunLoading(false);
       }
     },
-    [],
+    [t],
   );
 
   if (!conversation) {
@@ -373,7 +373,19 @@ export function ChatPanel() {
             <MessageItem
               message={message}
               onImageSettled={handleImageSettled}
-              canRecall={message.senderType === "agent" && message.senderId === currentUserId}
+              canRecall={channel?.channelType === "web" && message.senderType === "agent" && message.senderId === currentUserId}
+              isWhatsApp={isWhatsApp}
+              canRetry={Boolean(isWhatsApp && ownsConversation && conversation.status === 3 && message.senderType === "agent" && message.senderId === currentUserId)}
+              retrying={retryingId === message.id}
+              onRetry={async (messageId) => {
+                if (retryingId) return;
+                setRetryingId(messageId);
+                try {
+                  const updated = await retryAgentMessage(messageId);
+                  useAgentConversationsStore.getState().applyRealtimeMessageCreated(updated);
+                } catch (error) { toast.error(error instanceof Error ? error.message : t("conversation.sendMessageFailed")); }
+                finally { setRetryingId(0); }
+              }}
               recalling={recallingMessageId === message.id}
               onRecall={async (messageId) => {
                 await recallMessage(messageId);
@@ -402,6 +414,7 @@ export function ChatPanel() {
           icon={<BotIcon className="size-4" />}
           message={t("conversation.aiServingNotice")}
           tone="ai"
+          action={<Button size="sm" disabled={claiming} onClick={() => setClaimDialogOpen(true)}><UserCheckIcon data-icon="inline-start" />{t("conversation.inbox.takeover")}</Button>}
         />
       ) : isPendingConversation ? (
         <ComposerNotice
@@ -418,11 +431,16 @@ export function ChatPanel() {
             </Button>
           }
         />
+      ) : !ownsConversation ? (
+        <ComposerNotice icon={<UserCheckIcon className="size-4" />} message={t("conversation.inbox.otherOwner", { name: conversation.currentAssigneeName || t("conversation.agentSender") })} />
       ) : (
         <div className="flex h-full min-h-0 flex-col">
           <div className="min-h-0 flex-1">
             <AgentMessageEditor
-              disabled={!conversation || sending}
+              key={conversation.id}
+              conversationId={conversation.id}
+              textOnly={isWhatsApp}
+              disabled={!channel || channel.status !== 0 || sending}
               uploadingAsset={uploadingAsset}
               onSend={handleSend}
               onUploadImage={async (file) => {
@@ -447,6 +465,9 @@ export function ChatPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <ReceptionWorkbar key={conversation.id} conversation={conversation} />
+      <TranslationToolbar key={`translation-${conversation.id}`} conversationId={conversation.id} />
+      {disconnected ? <div role="status" className="flex shrink-0 items-center gap-2 border-b bg-muted px-4 py-2 text-sm"><AlertTriangleIcon className="size-4 shrink-0" /><span>{t(channel?.status === 0 ? "conversation.inbox.offline" : "conversation.inbox.disabledChannel")}</span></div> : null}
       {isLgUp ? (
         <ResizablePanelGroup
           orientation="vertical"
@@ -542,6 +563,10 @@ export function ChatPanel() {
 }
 
 type MessageItemProps = {
+  isWhatsApp: boolean;
+  canRetry: boolean;
+  retrying: boolean;
+  onRetry: (messageId: number) => Promise<void>;
   message: AgentMessage;
   onImageSettled: () => void;
   canRecall: boolean;
@@ -552,6 +577,10 @@ type MessageItemProps = {
 
 const MessageItem = memo(
   function MessageItem({
+    isWhatsApp,
+    canRetry,
+    retrying,
+    onRetry,
     message,
     onImageSettled,
     canRecall,
@@ -626,23 +655,27 @@ const MessageItem = memo(
                   isRecalled ? recalledBubbleClassName : bubbleClassName
                 }`}
               >
-                <ImMessageHTML
+                {!isRecalled && parseLinkedMessage(message.payload) ? <LinkedMessageContent message={message} onImageClick={openImageLightbox} onSettled={onImageSettled} /> : <ImMessageHTML
                   html={htmlContent}
                   className={isRecalled ? recalledHtmlClassName : htmlClassName}
                   onImageSettled={onImageSettled}
                   onImageClick={isRecalled ? undefined : openImageLightbox}
-                />
+                />}
               </ConversationMessageBubble>
-              <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <MessageTranslation message={message} />
+              <div className="mt-1 flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
                 <span>{formatDateTime(message.sentAt || "")}</span>
                 {isRecalled ? <span>{t("conversation.messageRecalled")}</span> : null}
                 {message.sendStatus === 2 && !isRecalled && (
                   <span>
-                    {message.customerRead
+                    {isWhatsApp ? t("conversation.inbox.sent") : message.customerRead
                       ? t("conversation.customerRead")
                       : t("conversation.customerUnread")}
                   </span>
                 )}
+                {message.sendStatus === IMMessageStatus.Sending ? <span role="status">{t("conversation.inbox.sending")}</span> : null}
+                {message.sendStatus === IMMessageStatus.Failed ? <span className="text-destructive">{t("conversation.inbox.failed")}</span> : null}
+                {message.sendStatus === IMMessageStatus.Failed && canRetry ? <Button size="sm" variant="ghost" disabled={retrying} onClick={() => void onRetry(message.id)}><RotateCwIcon data-icon="inline-start" />{t("conversation.inbox.retry")}</Button> : null}
                 {showRecallAction ? (
                   <Button
                     type="button"
@@ -700,13 +733,14 @@ const MessageItem = memo(
                   isRecalled ? recalledBubbleClassName : bubbleClassName
                 }`}
               >
-                <ImMessageHTML
+                {!isRecalled && parseLinkedMessage(message.payload) ? <LinkedMessageContent message={message} onImageClick={openImageLightbox} onSettled={onImageSettled} /> : <ImMessageHTML
                   html={htmlContent}
                   className={isRecalled ? recalledHtmlClassName : htmlClassName}
                   onImageSettled={onImageSettled}
                   onImageClick={isRecalled ? undefined : openImageLightbox}
-                />
+                />}
               </ConversationMessageBubble>
+              <MessageTranslation message={message} />
               <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                 <span>{formatDateTime(message.sentAt || "")}</span>
                 {isRecalled ? <span>{t("conversation.messageRecalled")}</span> : null}
@@ -723,6 +757,9 @@ const MessageItem = memo(
     prevProps.canRecall === nextProps.canRecall &&
     prevProps.recalling === nextProps.recalling &&
     prevProps.onRecall === nextProps.onRecall &&
+    prevProps.canRetry === nextProps.canRetry &&
+    prevProps.retrying === nextProps.retrying &&
+    prevProps.onRetry === nextProps.onRetry &&
     prevProps.onOpenWorkflowRun === nextProps.onOpenWorkflowRun,
 );
 

@@ -27,6 +27,7 @@ import {
   KnowledgeDocumentContentType,
 } from "@/lib/generated/enums"
 import { useI18n } from "@/i18n/provider"
+import { toast } from "sonner"
 
 type DocumentEditDialogProps = {
   open: boolean
@@ -85,13 +86,14 @@ function buildForm(item: KnowledgeDocument | null, initialDirectoryId = 0): Edit
   }
 }
 
-function buildPayload(form: EditForm, knowledgeBaseId: number): CreateKnowledgeDocumentPayload {
+function buildPayload(form: EditForm, knowledgeBaseId: number, chunkConfig?: Partial<CreateKnowledgeDocumentPayload>): CreateKnowledgeDocumentPayload {
   return {
     knowledgeBaseId,
     directoryId: Number(form.directoryId),
     title: form.title.trim(),
     contentType: form.contentType,
     content: form.content.trim(),
+    ...chunkConfig,
   }
 }
 
@@ -141,7 +143,9 @@ function DocumentFormDialogBody({
   const t = useI18n()
   const formId = "knowledge-document-edit-form"
   const [loading, setLoading] = useState(false)
+  const [parsingFile, setParsingFile] = useState(false)
   const [directories, setDirectories] = useState<KnowledgeDirectory[]>([])
+  const [savedChunkConfig, setSavedChunkConfig] = useState<Partial<CreateKnowledgeDocumentPayload>>({})
   const knowledgeDocumentFormSchema = useMemo(() => createKnowledgeDocumentFormSchema(t), [t])
   const editFormResolver = useMemo(
     () => zodResolver(knowledgeDocumentFormSchema) as Resolver<EditForm>,
@@ -174,12 +178,22 @@ function DocumentFormDialogBody({
   useEffect(() => {
     async function loadDetail() {
       if (!itemId) {
+        setSavedChunkConfig({ chunkConfigOverride: false })
         reset(buildForm(null, initialDirectoryId))
         return
       }
       setLoading(true)
       try {
         const data = await fetchKnowledgeDocument(itemId)
+        setSavedChunkConfig({
+          chunkConfigOverride: data.chunkConfigOverride,
+          chunkProvider: data.chunkProvider,
+          chunkTargetTokens: data.chunkTargetTokens,
+          chunkMaxTokens: data.chunkMaxTokens,
+          chunkOverlapTokens: data.chunkOverlapTokens,
+          parentChunkTokens: data.parentChunkTokens,
+          childChunkTokens: data.childChunkTokens,
+        })
         reset(buildForm(data))
       } catch (error) {
         console.error("Failed to load knowledge document:", error)
@@ -209,8 +223,51 @@ function DocumentFormDialogBody({
   }, [knowledgeBaseId])
 
   async function onFormSubmit(values: EditForm) {
-    const payload = buildPayload({ ...values, contentType, content }, knowledgeBaseId)
+    const payload = buildPayload({ ...values, contentType, content }, knowledgeBaseId, savedChunkConfig)
     await onSubmit(payload)
+  }
+
+  async function handleFileImport(file: File | undefined) {
+    if (!file) return
+    const extension = file.name.split(".").pop()?.toLowerCase()
+    const textExtensions = ["txt", "md", "markdown", "html", "htm"]
+    const mineruExtensions = ["pdf", "doc", "docx", "ppt", "pptx", "png", "jpg", "jpeg"]
+    if (!extension || ![...textExtensions, ...mineruExtensions].includes(extension)) {
+      toast.error("不支持该文件格式")
+      return
+    }
+    setParsingFile(true)
+    try {
+      let importedContent: string
+      let inferredType: string
+      if (textExtensions.includes(extension)) {
+        importedContent = await file.text()
+        inferredType = ["html", "htm"].includes(extension)
+          ? KnowledgeDocumentContentType.HTML
+          : KnowledgeDocumentContentType.Markdown
+      } else {
+        const formData = new FormData()
+        formData.set("file", file)
+        const parserURL = `http://${window.location.hostname}:8090/v1/parse-document`
+        const response = await fetch(parserURL, { method: "POST", body: formData })
+        const payload = await response.json() as { content?: string; detail?: string }
+        if (!response.ok || !payload.content) throw new Error(payload.detail || "MinerU 解析失败")
+        importedContent = payload.content
+        inferredType = KnowledgeDocumentContentType.Markdown
+      }
+      if (!importedContent.trim()) {
+        toast.error("文件内容为空")
+        return
+      }
+      setValue("title", file.name.replace(/\.[^.]+$/, ""), { shouldDirty: true, shouldValidate: true })
+      setValue("content", importedContent, { shouldDirty: true, shouldValidate: true })
+      setValue("contentType", inferredType, { shouldDirty: true, shouldValidate: true })
+      toast.success("文件内容已导入，请确认后创建文档")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "文件解析失败")
+    } finally {
+      setParsingFile(false)
+    }
   }
 
   return (
@@ -241,7 +298,25 @@ function DocumentFormDialogBody({
           <div className="text-muted-foreground">{t("knowledge.loading")}</div>
         </div>
       ) : (
-        <form id={formId} onSubmit={handleSubmit(onFormSubmit)} className="space-y-4">
+        <form id={formId} onSubmit={handleSubmit(onFormSubmit)} className="flex flex-col gap-4">
+          {!itemId ? (
+            <Field>
+              <FieldLabel htmlFor="doc-file">从文件导入</FieldLabel>
+              <FieldContent>
+                <Input
+                  id="doc-file"
+                  type="file"
+                  accept=".txt,.md,.markdown,.html,.htm,.pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg"
+                  disabled={saving || parsingFile}
+                  onChange={(event) => {
+                    void handleFileImport(event.target.files?.[0])
+                    event.target.value = ""
+                  }}
+                />
+                <p className="text-sm text-muted-foreground">支持 TXT、Markdown、HTML、PDF、Office 文档和图片；复杂文件由 MinerU 解析。</p>
+              </FieldContent>
+            </Field>
+          ) : null}
           <Field data-invalid={!!errors.directoryId}>
             <FieldLabel>{t("knowledge.directory")}</FieldLabel>
             <FieldContent>

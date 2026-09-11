@@ -51,6 +51,11 @@ func (s *notificationService) CreateAndPush(req request.CreateNotificationReques
 	if err != nil {
 		return nil, err
 	}
+	s.Push(item)
+	return item, nil
+}
+
+func (s *notificationService) Push(item *models.Notification) {
 	WsService.PublishNotificationCreated(item.RecipientUserID, response.NotificationResponse{
 		ID:               item.ID,
 		RecipientUserID:  item.RecipientUserID,
@@ -63,7 +68,6 @@ func (s *notificationService) CreateAndPush(req request.CreateNotificationReques
 		ReadAt:           utils.FormatTimePtr(item.ReadAt),
 		CreatedAt:        utils.FormatTime(item.CreatedAt),
 	})
-	return item, nil
 }
 
 func (s *notificationService) FindPageByCnd(cnd *sqls.Cnd) ([]models.Notification, *sqls.Paging) {

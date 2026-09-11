@@ -162,6 +162,39 @@ func (p *LanceDBProvider) DeleteVectors(ctx context.Context, collectionName stri
 	return nil
 }
 
+func (p *LanceDBProvider) DeleteVectorsByFilter(ctx context.Context, collectionName string, filter *SearchFilter) error {
+	query := lanceDBSearchFilter(filter)
+	if query == "" {
+		return fmt.Errorf("lancedb vector deletion requires a non-empty filter")
+	}
+	table, err := p.openTable(ctx, collectionName)
+	if err != nil {
+		return err
+	}
+	defer table.Close()
+	if err := table.Delete(ctx, query); err != nil {
+		return fmt.Errorf("failed to delete filtered lancedb vectors from %s: %w", collectionName, err)
+	}
+	return nil
+}
+
+func (p *LanceDBProvider) CountVectors(ctx context.Context, collectionName string, filter *SearchFilter) (int64, error) {
+	table, err := p.openTable(ctx, collectionName)
+	if err != nil {
+		return 0, err
+	}
+	defer table.Close()
+	query := lanceDBSearchFilter(filter)
+	if query == "" {
+		return table.Count(ctx)
+	}
+	rows, err := table.SelectWithFilter(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count filtered lancedb vectors in %s: %w", collectionName, err)
+	}
+	return int64(len(rows)), nil
+}
+
 func (p *LanceDBProvider) Search(ctx context.Context, req *SearchRequest) ([]SearchResult, error) {
 	table, err := p.openTable(ctx, req.CollectionName)
 	if err != nil {
@@ -227,6 +260,7 @@ func newLanceDBSchema(dimension int) (contracts.ISchema, error) {
 		{Name: "section_path", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "title", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "content", Type: arrow.BinaryTypes.String, Nullable: true},
+		{Name: "context_content", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "provider", Type: arrow.BinaryTypes.String, Nullable: true},
 	}, nil)
 	return lancedb.NewSchema(schema)
@@ -261,6 +295,7 @@ func newLanceDBVectorRecord(vectors []Vector) (arrow.Record, func(), error) {
 	sectionPathBuilder := array.NewStringBuilder(pool)
 	titleBuilder := array.NewStringBuilder(pool)
 	contentBuilder := array.NewStringBuilder(pool)
+	contextContentBuilder := array.NewStringBuilder(pool)
 	providerBuilder := array.NewStringBuilder(pool)
 	vectorBuilder := array.NewFloat32Builder(pool)
 
@@ -278,6 +313,7 @@ func newLanceDBVectorRecord(vectors []Vector) (arrow.Record, func(), error) {
 		sectionPathBuilder.Append(payload.SectionPath)
 		titleBuilder.Append(payload.Title)
 		contentBuilder.Append(payload.Content)
+		contextContentBuilder.Append(payload.ContextContent)
 		providerBuilder.Append(payload.Provider)
 	}
 
@@ -293,6 +329,7 @@ func newLanceDBVectorRecord(vectors []Vector) (arrow.Record, func(), error) {
 	sectionPathArray := sectionPathBuilder.NewArray()
 	titleArray := titleBuilder.NewArray()
 	contentArray := contentBuilder.NewArray()
+	contextContentArray := contextContentBuilder.NewArray()
 	providerArray := providerBuilder.NewArray()
 
 	vectorType := arrow.FixedSizeListOf(int32(dimension), arrow.PrimitiveTypes.Float32)
@@ -312,6 +349,7 @@ func newLanceDBVectorRecord(vectors []Vector) (arrow.Record, func(), error) {
 		{Name: "section_path", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "title", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "content", Type: arrow.BinaryTypes.String, Nullable: true},
+		{Name: "context_content", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "provider", Type: arrow.BinaryTypes.String, Nullable: true},
 	}, nil)
 	columns := []arrow.Array{
@@ -327,6 +365,7 @@ func newLanceDBVectorRecord(vectors []Vector) (arrow.Record, func(), error) {
 		sectionPathArray,
 		titleArray,
 		contentArray,
+		contextContentArray,
 		providerArray,
 	}
 	record := array.NewRecord(schema, columns, int64(len(vectors)))
@@ -368,6 +407,9 @@ func lanceDBSearchFilter(filter *SearchFilter) string {
 	}
 	if len(filter.DocumentIDs) > 0 {
 		parts = append(parts, lanceDBIntInFilter("document_id", filter.DocumentIDs))
+	}
+	if len(filter.FAQIDs) > 0 {
+		parts = append(parts, lanceDBIntInFilter("faq_id", filter.FAQIDs))
 	}
 	return strings.Join(parts, " AND ")
 }
@@ -428,6 +470,7 @@ func lanceDBPayloadFromRow(row map[string]interface{}) ChunkPayload {
 		SectionPath:     valueToString(row["section_path"]),
 		Title:           valueToString(row["title"]),
 		Content:         valueToString(row["content"]),
+		ContextContent:  valueToString(row["context_content"]),
 		Provider:        valueToString(row["provider"]),
 	}
 }

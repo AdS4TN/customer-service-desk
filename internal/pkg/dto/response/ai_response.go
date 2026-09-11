@@ -3,6 +3,7 @@ package response
 import (
 	"agent-desk/internal/models"
 	"agent-desk/internal/pkg/enums"
+	"agent-desk/internal/pkg/reception"
 )
 
 type AIAgentTeamResponse struct {
@@ -94,6 +95,9 @@ func BuildAIConfigResponse(item *models.AIConfig) AIConfigResponse {
 type AIAgentResponse struct {
 	ID                     int64                            `json:"id"`
 	Name                   string                           `json:"name"`
+	DisplayName            string                           `json:"displayName"`
+	Avatar                 string                           `json:"avatar"`
+	StatusText             string                           `json:"statusText"`
 	Description            string                           `json:"description"`
 	Status                 enums.Status                     `json:"status"`
 	StatusName             string                           `json:"statusName"`
@@ -106,6 +110,7 @@ type AIAgentResponse struct {
 	ServiceMode            enums.IMConversationServiceMode  `json:"serviceMode"`
 	ServiceModeName        string                           `json:"serviceModeName"`
 	SystemPrompt           string                           `json:"systemPrompt"`
+	ReceptionPolicy        reception.Policy                 `json:"receptionPolicy"`
 	WelcomeMessage         string                           `json:"welcomeMessage"`
 	ReplyTimeoutSeconds    int                              `json:"replyTimeoutSeconds"`
 	RolloutPercent         int                              `json:"rolloutPercent"`

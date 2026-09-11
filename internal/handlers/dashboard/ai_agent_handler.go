@@ -12,6 +12,7 @@ import (
 	"agent-desk/internal/pkg/dto/response"
 	"agent-desk/internal/pkg/enums"
 	"agent-desk/internal/pkg/i18nx"
+	"agent-desk/internal/pkg/reception"
 	"agent-desk/internal/pkg/toolx"
 	"agent-desk/internal/pkg/utils"
 	"agent-desk/internal/services"
@@ -240,6 +241,9 @@ func buildAIAgentResponseWithLocale(item *models.AIAgent, locale string) respons
 	ret := response.AIAgentResponse{
 		ID:                     item.ID,
 		Name:                   item.Name,
+		DisplayName:            item.DisplayName,
+		Avatar:                 item.Avatar,
+		StatusText:             item.StatusText,
 		Description:            item.Description,
 		Status:                 item.Status,
 		StatusName:             enums.GetStatusLabel(item.Status),
@@ -251,6 +255,7 @@ func buildAIAgentResponseWithLocale(item *models.AIAgent, locale string) respons
 		ServiceMode:            item.ServiceMode,
 		ServiceModeName:        enums.GetIMConversationServiceModeLabel(item.ServiceMode),
 		SystemPrompt:           item.SystemPrompt,
+		ReceptionPolicy:        reception.Decode(item.ReceptionPolicy),
 		WelcomeMessage:         item.WelcomeMessage,
 		ReplyTimeoutSeconds:    item.ReplyTimeoutSeconds,
 		RolloutPercent:         item.RolloutPercent,

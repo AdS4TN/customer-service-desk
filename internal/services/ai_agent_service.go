@@ -12,6 +12,7 @@ import (
 	"agent-desk/internal/pkg/dto/request"
 	"agent-desk/internal/pkg/enums"
 	"agent-desk/internal/pkg/errorsx"
+	"agent-desk/internal/pkg/reception"
 	"agent-desk/internal/pkg/toolx"
 	"agent-desk/internal/pkg/utils"
 	"agent-desk/internal/repositories"
@@ -105,6 +106,9 @@ func (s *aIAgentService) UpdateAIAgent(req request.UpdateAIAgentRequest, operato
 	}
 	columns := map[string]any{
 		"name":                  item.Name,
+		"display_name":          item.DisplayName,
+		"avatar":                item.Avatar,
+		"status_text":           item.StatusText,
 		"description":           item.Description,
 		"ai_config_id":          item.AIConfigID,
 		"max_steps":             item.MaxSteps,
@@ -129,6 +133,9 @@ func (s *aIAgentService) UpdateAIAgent(req request.UpdateAIAgentRequest, operato
 	}
 	if item.RolloutPercent != current.RolloutPercent {
 		columns["previous_rollout_percent"] = current.RolloutPercent
+	}
+	if req.ReceptionPolicy != nil {
+		columns["reception_policy"] = item.ReceptionPolicy
 	}
 	return sqls.WithTransaction(func(ctx *sqls.TxContext) error {
 		if err := repositories.AIAgentRepository.Updates(ctx.Tx, req.ID, columns); err != nil {
@@ -365,8 +372,20 @@ func (s *aIAgentService) buildAIAgentModel(id int64, req request.CreateAIAgentRe
 		}
 		mcpToolsJSON = string(buf)
 	}
+	receptionPolicy := ""
+	if req.ReceptionPolicy != nil {
+		policy, policyErr := reception.Normalize(*req.ReceptionPolicy)
+		if policyErr != nil {
+			return nil, errorsx.InvalidParamI18n("error.reception.invalid")
+		}
+		buf, _ := json.Marshal(policy)
+		receptionPolicy = string(buf)
+	}
 	return &models.AIAgent{
 		Name:                name,
+		DisplayName:         strings.TrimSpace(req.DisplayName),
+		Avatar:              strings.TrimSpace(req.Avatar),
+		StatusText:          strings.TrimSpace(req.StatusText),
 		Description:         strings.TrimSpace(req.Description),
 		AIConfigID:          req.AIConfigID,
 		MaxSteps:            req.MaxSteps,
@@ -375,6 +394,7 @@ func (s *aIAgentService) buildAIAgentModel(id int64, req request.CreateAIAgentRe
 		KnowledgePolicy:     strings.TrimSpace(req.KnowledgePolicy),
 		ServiceMode:         req.ServiceMode,
 		SystemPrompt:        strings.TrimSpace(req.SystemPrompt),
+		ReceptionPolicy:     receptionPolicy,
 		WelcomeMessage:      strings.TrimSpace(req.WelcomeMessage),
 		ReplyTimeoutSeconds: req.ReplyTimeoutSeconds,
 		RolloutPercent:      req.RolloutPercent,
@@ -434,6 +454,15 @@ func (s *aIAgentService) normalizeToolPolicy(raw string) (string, error) {
 }
 
 func (s *aIAgentService) normalizeKnowledgeBaseIDs(input []int64) ([]int64, error) {
+	if len(input) == 0 {
+		defaultKnowledgeBase := KnowledgeBaseService.FindOne(sqls.NewCnd().
+			Eq("knowledge_type", string(enums.KnowledgeBaseTypeDocument)).
+			Eq("status", enums.StatusOk).
+			Asc("id"))
+		if defaultKnowledgeBase != nil {
+			return []int64{defaultKnowledgeBase.ID}, nil
+		}
+	}
 	ret := make([]int64, 0, len(input))
 	seen := make(map[int64]struct{})
 	for _, id := range input {

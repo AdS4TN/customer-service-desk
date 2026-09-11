@@ -9,8 +9,12 @@ import {
 } from "@/components/chat/shared-message-editor"
 import { useI18n } from "@/i18n/provider"
 import { fetchQuickReplyListAll, type AdminQuickReply } from "@/lib/api/admin"
+import { useAgentConversationsStore } from "@/lib/stores/agent-conversations"
+import { useTranslatedReply } from "./translated-reply"
 
 type AgentMessageEditorProps = {
+  conversationId: number
+  textOnly?: boolean
   disabled?: boolean
   uploadingAsset?: boolean
   onSend: (html: string) => Promise<void>
@@ -19,6 +23,8 @@ type AgentMessageEditorProps = {
 }
 
 export function AgentMessageEditor({
+  conversationId,
+  textOnly = false,
   disabled = false,
   uploadingAsset = false,
   onSend,
@@ -26,6 +32,9 @@ export function AgentMessageEditor({
   onSendAttachment,
 }: AgentMessageEditorProps) {
   const t = useI18n()
+  const translation = useTranslatedReply(conversationId, onSend, disabled)
+  const insertion = useAgentConversationsStore((state) => state.draftInsertion)
+  const consumeInsertion = useAgentConversationsStore((state) => state.consumeDraftInsertion)
   const [quickReplies, setQuickReplies] = useState<AdminQuickReply[]>([])
   const [loadingQuickReplies, setLoadingQuickReplies] = useState(true)
   const [quickReplyPickerOpen, setQuickReplyPickerOpen] = useState(false)
@@ -54,9 +63,17 @@ export function AgentMessageEditor({
   }, [t])
 
   return (
+    <>
+    {translation.controls}
     <SharedMessageEditor
       variant="agent"
-      disabled={disabled}
+      textOnly={textOnly}
+      allowAttachments={textOnly}
+      initialHTML={useAgentConversationsStore.getState().drafts[conversationId] ?? ""}
+      insertText={insertion?.conversationId === conversationId ? insertion : undefined}
+      onTextInserted={consumeInsertion}
+      onHTMLChange={(html) => useAgentConversationsStore.getState().setDraft(conversationId, html)}
+      disabled={disabled || translation.previewing}
       uploadingAsset={uploadingAsset}
       quickReplies={{
         open: quickReplyPickerOpen,
@@ -64,9 +81,12 @@ export function AgentMessageEditor({
         items: quickReplies,
         onOpenChange: setQuickReplyPickerOpen,
       }}
-      onSend={onSend}
+      onSend={translation.send}
+      sendLabel={translation.beforeSend ? t("translation.previewAction") : undefined}
       onUploadImage={onUploadImage}
       onSendAttachment={onSendAttachment}
     />
+    {translation.dialog}
+    </>
   )
 }

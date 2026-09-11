@@ -60,6 +60,11 @@ func (s *messageService) FindByConversationIDCursor(conversationID int64, cursor
 		cnd.Eq("message_type", messageType)
 	}
 	list = s.Find(cnd)
+	if conversation := ConversationService.Get(conversationID); conversation != nil {
+		if channel := ChannelService.Get(conversation.ChannelID); channel != nil && (channel.ChannelType == enums.ChannelTypeWhatsApp || channel.ChannelType == enums.ChannelTypeMessenger) {
+			list = repositories.FindWhatsAppMessagesBefore(sqls.DB(), conversationID, cursor, limit, senderType, messageType)
+		}
+	}
 	nextCursor = cursor
 	hasMore = false
 	if len(list) > 0 {
@@ -399,6 +404,12 @@ func (s *messageService) sendMessage(conversationID int64, senderType enums.IMSe
 
 func (s *messageService) sendValidatedMessage(conversation *models.Conversation, senderType enums.IMSenderType, reqSenderID int64, clientMsgID string,
 	messageType enums.IMMessageType, content, payload string, operator *dto.AuthPrincipal, external *openidentity.ExternalUser, requestID string, workflowRunID int64) (*models.Message, error) {
+	if err := MessengerService.validateOutbound(conversation, senderType, messageType, content); err != nil {
+		return nil, err
+	}
+	if err := WhatsAppService.validateOutbound(conversation, senderType, messageType, content); err != nil {
+		return nil, err
+	}
 
 	var err error
 	var summary string
@@ -467,7 +478,21 @@ func (s *messageService) sendValidatedMessage(conversation *models.Conversation,
 	}
 
 	err = sqls.WithTransaction(func(ctx *sqls.TxContext) error {
+		current, err := repositories.LockConversationWork(ctx.Tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		message.ReplyToCustomerMessageID = current.LastCustomerMessageID
 		if err := repositories.MessageRepository.Create(ctx.Tx, message); err != nil {
+			return err
+		}
+		if err := MessengerService.enqueue(ctx.Tx, conversation, message); err != nil {
+			return err
+		}
+		if err := WhatsAppService.enqueue(ctx.Tx, conversation, message); err != nil {
+			return err
+		}
+		if err := ConversationWorkService.onMessage(ctx, message); err != nil {
 			return err
 		}
 
@@ -529,8 +554,14 @@ func (s *messageService) sendValidatedMessage(conversation *models.Conversation,
 	}
 
 	// 处理websocket消息
+	conversation = ConversationService.Get(conversation.ID)
 	WsService.PublishMessageCreated(conversation, message)
 	WsService.PublishConversationChanged(conversation, enums.IMRealtimeEventConversationUpdated)
+	if !message.IsHistorical && (senderType == enums.IMSenderTypeCustomer || senderType == enums.IMSenderTypeAgent || senderType == enums.IMSenderTypeAI) {
+		if err := ConversationMemoryService.Queue(conversation.ID); err != nil {
+			slog.Warn("queue conversation memory failed", "conversation_id", conversation.ID)
+		}
+	}
 
 	// 企业微信客服消息入队，异步发送
 	if enqueueErr := ChannelMessageOutboxService.EnqueueWxWorkKFMessage(conversation, message); enqueueErr != nil {

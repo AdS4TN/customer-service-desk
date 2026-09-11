@@ -114,10 +114,12 @@ func (s *knowledgeDocumentService) CreateKnowledgeDocument(req request.CreateKno
 	}); err != nil {
 		return nil, err
 	}
-	if err := rag.Index.IndexDocumentByID(context.Background(), item.ID); err != nil {
-		slog.Error("failed to index created knowledge document", "document_id", item.ID, "error", err)
-	}
-	item = s.Get(item.ID)
+	documentID := item.ID
+	go func() {
+		if err := rag.Index.IndexDocumentByID(context.Background(), documentID); err != nil {
+			slog.Error("failed to index created knowledge document", "document_id", documentID, "error", err)
+		}
+	}()
 	return item, nil
 }
 
@@ -145,18 +147,25 @@ func (s *knowledgeDocumentService) UpdateKnowledgeDocument(req request.UpdateKno
 	}
 	oldKnowledgeBaseID := current.KnowledgeBaseID
 	if err := repositories.KnowledgeDocumentRepository.Updates(sqls.DB(), req.ID, map[string]any{
-		"knowledge_base_id": item.KnowledgeBaseID,
-		"directory_id":      item.DirectoryID,
-		"title":             item.Title,
-		"content_type":      item.ContentType,
-		"content_hash":      item.ContentHash,
-		"content":           item.Content,
-		"index_status":      enums.KnowledgeDocumentIndexStatusPending,
-		"indexed_at":        nil,
-		"index_error":       "",
-		"update_user_id":    operator.UserID,
-		"update_user_name":  operator.Username,
-		"updated_at":        time.Now(),
+		"knowledge_base_id":     item.KnowledgeBaseID,
+		"directory_id":          item.DirectoryID,
+		"title":                 item.Title,
+		"content_type":          item.ContentType,
+		"content_hash":          item.ContentHash,
+		"content":               item.Content,
+		"chunk_config_override": item.ChunkConfigOverride,
+		"chunk_provider":        item.ChunkProvider,
+		"chunk_target_tokens":   item.ChunkTargetTokens,
+		"chunk_max_tokens":      item.ChunkMaxTokens,
+		"chunk_overlap_tokens":  item.ChunkOverlapTokens,
+		"parent_chunk_tokens":   item.ParentChunkTokens,
+		"child_chunk_tokens":    item.ChildChunkTokens,
+		"index_status":          enums.KnowledgeDocumentIndexStatusPending,
+		"indexed_at":            nil,
+		"index_error":           "",
+		"update_user_id":        operator.UserID,
+		"update_user_name":      operator.Username,
+		"updated_at":            time.Now(),
 	}); err != nil {
 		return err
 	}
@@ -260,17 +269,57 @@ func (s *knowledgeDocumentService) buildKnowledgeDocumentModel(req request.Creat
 
 	plainText := rag.ExtractPlainText(req.Content, req.ContentType)
 	item := &models.KnowledgeDocument{
-		KnowledgeBaseID: req.KnowledgeBaseID,
-		DirectoryID:     req.DirectoryID,
-		Title:           req.Title,
-		ContentType:     req.ContentType,
-		Content:         req.Content,
+		KnowledgeBaseID:     req.KnowledgeBaseID,
+		DirectoryID:         req.DirectoryID,
+		Title:               req.Title,
+		ContentType:         req.ContentType,
+		Content:             req.Content,
+		ChunkConfigOverride: req.ChunkConfigOverride,
+		ChunkProvider:       req.ChunkProvider,
+		ChunkTargetTokens:   req.ChunkTargetTokens,
+		ChunkMaxTokens:      req.ChunkMaxTokens,
+		ChunkOverlapTokens:  req.ChunkOverlapTokens,
+		ParentChunkTokens:   req.ParentChunkTokens,
+		ChildChunkTokens:    req.ChildChunkTokens,
+	}
+	if item.ChunkConfigOverride {
+		if !isValidDocumentChunkProvider(item.ChunkProvider) || item.ChunkTargetTokens <= 0 || item.ChunkMaxTokens < item.ChunkTargetTokens || item.ChunkOverlapTokens < 0 || item.ChunkOverlapTokens >= item.ChunkMaxTokens {
+			return nil, errorsx.InvalidParamI18n("error.e0130")
+		}
+		if item.ParentChunkTokens <= 0 {
+			item.ParentChunkTokens = 900
+		}
+		if item.ChildChunkTokens <= 0 {
+			item.ChildChunkTokens = 200
+		}
+		if item.ParentChunkTokens < item.ChildChunkTokens {
+			return nil, errorsx.InvalidParamI18n("error.e0130")
+		}
+	} else {
+		item.ChunkProvider = ""
+		item.ChunkTargetTokens = 0
+		item.ChunkMaxTokens = 0
+		item.ChunkOverlapTokens = 0
+		item.ParentChunkTokens = 0
+		item.ChildChunkTokens = 0
 	}
 	if plainText != "" {
 		hash := sha256.Sum256([]byte(plainText))
 		item.ContentHash = hex.EncodeToString(hash[:])
 	}
 	return item, nil
+}
+
+func isValidDocumentChunkProvider(provider string) bool {
+	switch provider {
+	case string(enums.KnowledgeChunkProviderFixed),
+		string(enums.KnowledgeChunkProviderStructured),
+		string(enums.KnowledgeChunkProviderRecursive),
+		string(enums.KnowledgeChunkProviderParentChild):
+		return true
+	default:
+		return false
+	}
 }
 
 func uniquePositiveIDs(ids []int64) []int64 {

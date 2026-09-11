@@ -8,6 +8,7 @@ import (
 	"agent-desk/internal/pkg/enums"
 	"agent-desk/internal/pkg/httpx"
 	"agent-desk/internal/services"
+	"net/http"
 
 	"agent-desk/internal/pkg/httpx/params"
 
@@ -74,6 +75,41 @@ func KnowledgeDocumentGetBy(ctx *gin.Context) {
 	httpx.WriteJSON(ctx, resp)
 }
 
+func KnowledgeDocumentGetIndex_status(ctx *gin.Context) {
+	id, ok := httpx.GetPathInt64(ctx, "id")
+	if !ok {
+		return
+	}
+	if _, err := services.AuthService.RequirePermission(ctx, constants.PermissionKnowledgeDocumentView); err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+
+	item := services.KnowledgeDocumentService.Get(id)
+	if item == nil {
+		httpx.WriteJSON(ctx, httpx.JsonErrorMsg(ctx, "error.e0218"))
+		return
+	}
+	httpx.WriteJSON(ctx, builders.BuildKnowledgeDocumentList(item))
+}
+
+func KnowledgeDocumentGetIngestion(ctx *gin.Context) {
+	id, ok := httpx.GetPathInt64(ctx, "id")
+	if !ok {
+		return
+	}
+	if _, err := services.AuthService.RequirePermission(ctx, constants.PermissionKnowledgeDocumentView); err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	snapshot := services.KnowledgeIngestionService.Get(id)
+	if snapshot == nil {
+		httpx.WriteJSON(ctx, httpx.JsonErrorMsg(ctx, "error.knowledgeIngestion.notFound"))
+		return
+	}
+	httpx.WriteJSON(ctx, builders.BuildKnowledgeIngestionJob(snapshot.Job, snapshot.Document, snapshot.Asset))
+}
+
 func fillKnowledgeDocumentDirectory(resp any, directoryPaths map[int64]string) {
 	switch item := resp.(type) {
 	case *response.KnowledgeDocumentResponse:
@@ -103,6 +139,67 @@ func KnowledgeDocumentPostCreate(ctx *gin.Context) {
 		return
 	}
 	httpx.WriteJSON(ctx, builders.BuildKnowledgeDocument(item))
+}
+
+func KnowledgeDocumentPostUpload(ctx *gin.Context) {
+	operator, err := services.AuthService.RequirePermission(ctx, constants.PermissionKnowledgeDocumentCreate)
+	if err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	req := request.UploadKnowledgeDocumentRequest{}
+	if err := params.ReadForm(ctx, &req); err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	file, err := ctx.FormFile("file")
+	if err != nil {
+		httpx.WriteJSON(ctx, httpx.JsonErrorMsg(ctx, "error.e0323"))
+		return
+	}
+	snapshot, err := services.KnowledgeIngestionService.QueueUpload(file, req, operator)
+	if err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	httpx.WriteHttpStatusJSON(ctx, http.StatusAccepted, builders.BuildKnowledgeIngestionJob(snapshot.Job, snapshot.Document, snapshot.Asset))
+}
+
+func KnowledgeDocumentPostCrawl_website(ctx *gin.Context) {
+	operator, err := services.AuthService.RequirePermission(ctx, constants.PermissionKnowledgeDocumentCreate)
+	if err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	req := request.CrawlKnowledgeWebsiteRequest{}
+	if err := params.ReadJSON(ctx, &req); err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	snapshot, err := services.KnowledgeIngestionService.QueueWebsite(req, operator)
+	if err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	httpx.WriteHttpStatusJSON(ctx, http.StatusAccepted, builders.BuildKnowledgeIngestionJob(snapshot.Job, snapshot.Document, snapshot.Asset))
+}
+
+func KnowledgeDocumentPostRetry_ingestion(ctx *gin.Context) {
+	id, ok := httpx.GetPathInt64(ctx, "id")
+	if !ok {
+		return
+	}
+	operator, err := services.AuthService.RequirePermission(ctx, constants.PermissionKnowledgeDocumentCreate)
+	if err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	snapshot, err := services.KnowledgeIngestionService.Retry(id, operator)
+	if err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	httpx.WriteJSON(ctx, builders.BuildKnowledgeIngestionJob(snapshot.Job, snapshot.Document, snapshot.Asset))
 }
 
 func KnowledgeDocumentPostUpdate(ctx *gin.Context) {

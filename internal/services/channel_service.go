@@ -105,6 +105,9 @@ func (s *channelService) UpdateChannel(req request.UpdateChannelRequest, operato
 	if err != nil {
 		return err
 	}
+	if current.ChannelType != item.ChannelType {
+		return errorsx.InvalidParamI18n("error.whatsapp.immutableType")
+	}
 	columns := map[string]any{
 		"channel_type":             item.ChannelType,
 		"channel_id":               item.ChannelID,
@@ -449,7 +452,7 @@ func (s *channelService) GetEnabledChannel(ctx *gin.Context) *models.Channel {
 
 func (s *channelService) buildChannelModel(id int64, req request.CreateChannelRequest) (*models.Channel, error) {
 	channelType := strings.TrimSpace(req.ChannelType)
-	if channelType != enums.ChannelTypeWeb && channelType != enums.ChannelTypeWechatMP && channelType != enums.ChannelTypeWxWorkKF && channelType != enums.ChannelTypeTelegram && channelType != enums.ChannelTypeZaloOA {
+	if channelType != enums.ChannelTypeWeb && channelType != enums.ChannelTypeWechatMP && channelType != enums.ChannelTypeWxWorkKF && channelType != enums.ChannelTypeTelegram && channelType != enums.ChannelTypeZaloOA && channelType != enums.ChannelTypeWhatsApp && channelType != enums.ChannelTypeMessenger {
 		return nil, errorsx.InvalidParamI18n("error.e0250")
 	}
 	name := strings.TrimSpace(req.Name)
@@ -490,6 +493,15 @@ func (s *channelService) buildChannelModel(id int64, req request.CreateChannelRe
 	}
 	configJSON := strings.TrimSpace(req.ConfigJSON)
 	switch channelType {
+	case enums.ChannelTypeWhatsApp, enums.ChannelTypeMessenger:
+		if channelID == "" {
+			channelID = strs.UUID()
+		}
+		// Device credentials and connection intent are never accepted from the form.
+		configJSON = "{}"
+		if id > 0 {
+			configJSON = s.Get(id).ConfigJSON
+		}
 	case enums.ChannelTypeWeb:
 		if channelID == "" {
 			channelID = strs.UUID()

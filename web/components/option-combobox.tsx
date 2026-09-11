@@ -31,6 +31,10 @@ export type ComboboxOption = {
 }
 
 type CommonOptionComboboxProps = {
+  id?: string
+  "aria-labelledby"?: string
+  "aria-describedby"?: string
+  "aria-invalid"?: boolean
   options: ComboboxOption[]
   placeholder: string
   searchPlaceholder?: string
@@ -81,7 +85,7 @@ export function OptionCombobox(props: OptionComboboxProps) {
       ? placeholder
       : selectedOptions.length === 1
         ? selectedOptions[0].label
-        : `已选择 ${selectedOptions.length} 项`
+        : t("common.selectedCount", { count: selectedOptions.length })
   const optionGroups = Array.from(
     options.reduce((groups, option) => {
       const group = option.group ?? ""
@@ -112,6 +116,10 @@ export function OptionCombobox(props: OptionComboboxProps) {
       <PopoverTrigger
         render={
           <Button
+            id={props.id}
+            aria-labelledby={props["aria-labelledby"]}
+            aria-describedby={props["aria-describedby"]}
+            aria-invalid={props["aria-invalid"]}
             variant="outline"
             role="combobox"
             className={cn("m-0 w-full justify-between font-normal", triggerClassName)}

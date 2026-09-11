@@ -7,6 +7,7 @@ import (
 
 	"github.com/gomarkdown/markdown"
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 type structuredProvider struct{}
@@ -37,16 +38,12 @@ func (p *structuredProvider) Supports(contentType enums.KnowledgeDocumentContent
 }
 
 func (p *structuredProvider) Chunk(ctx context.Context, req *ChunkRequest) ([]ChunkResult, error) {
-	content := req.Content
-	if req.ContentType == enums.KnowledgeDocumentContentTypeMarkdown {
-		content = string(markdown.ToHTML([]byte(content), nil, nil))
-	}
-
-	blocks := parseStructuredBlocks(content, req.DocumentTitle)
+	blocks := structuredBlocksForRequest(req)
 	if len(blocks) == 0 {
-		return NewFixedProvider().Chunk(ctx, req)
+		return nil, nil
 	}
 
+	blocks = groupStructuredBlocks(blocks)
 	results := make([]ChunkResult, 0)
 	chunkNo := 0
 	for _, block := range blocks {
@@ -74,9 +71,57 @@ func (p *structuredProvider) Chunk(ctx context.Context, req *ChunkRequest) ([]Ch
 		}
 	}
 	if len(results) == 0 {
-		return NewFixedProvider().Chunk(ctx, req)
+		return nil, nil
 	}
 	return results, nil
+}
+
+func structuredBlocksForRequest(req *ChunkRequest) []contentBlock {
+	content := req.Content
+	if req.ContentType == enums.KnowledgeDocumentContentTypeMarkdown {
+		content = string(markdown.ToHTML([]byte(content), nil, nil))
+	}
+	blocks := parseStructuredBlocks(content, req.DocumentTitle)
+	if len(blocks) > 0 {
+		return blocks
+	}
+	text := req.PlainText
+	if text == "" {
+		text = req.Content
+	}
+	text = normalizeText(text)
+	if text == "" {
+		return nil
+	}
+	return []contentBlock{{
+		Type:        "paragraph",
+		Text:        text,
+		Title:       req.DocumentTitle,
+		SectionPath: req.DocumentTitle,
+	}}
+}
+
+func groupStructuredBlocks(blocks []contentBlock) []contentBlock {
+	if len(blocks) == 0 {
+		return nil
+	}
+	grouped := make([]contentBlock, 0, len(blocks))
+	for _, block := range blocks {
+		if len(grouped) == 0 || grouped[len(grouped)-1].SectionPath != block.SectionPath || isAtomicBlock(block.Type) || isAtomicBlock(grouped[len(grouped)-1].Type) {
+			grouped = append(grouped, block)
+			continue
+		}
+		last := &grouped[len(grouped)-1]
+		last.Text = strings.TrimSpace(last.Text + "\n" + block.Text)
+		if last.Type != block.Type {
+			last.Type = "paragraph"
+		}
+	}
+	return grouped
+}
+
+func isAtomicBlock(blockType string) bool {
+	return blockType == "table" || blockType == "code"
 }
 
 func parseStructuredBlocks(content string, documentTitle string) []contentBlock {
@@ -85,7 +130,7 @@ func parseStructuredBlocks(content string, documentTitle string) []contentBlock 
 		return nil
 	}
 
-	parent := &html.Node{Type: html.ElementNode, Data: "div"}
+	parent := &html.Node{Type: html.ElementNode, DataAtom: atom.Div, Data: "div"}
 	nodes, err := html.ParseFragment(strings.NewReader(content), parent)
 	if err != nil {
 		return nil

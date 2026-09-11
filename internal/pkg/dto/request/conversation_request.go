@@ -3,12 +3,19 @@ package request
 type AgentConversationFilter string
 
 const (
+	AgentConversationFilterAll       AgentConversationFilter = "all"
+	AgentConversationFilterUnread    AgentConversationFilter = "unread"
 	AgentConversationFilterAIServing AgentConversationFilter = "ai_serving"
 	AgentConversationFilterMine      AgentConversationFilter = "mine"
 	AgentConversationFilterActive    AgentConversationFilter = "active"
 	AgentConversationFilterPending   AgentConversationFilter = "pending"
 	AgentConversationFilterClosed    AgentConversationFilter = "closed"
 )
+
+type InboxFilter struct {
+	ChannelType string
+	ChannelID   int64
+}
 
 type ConversationListRequest struct {
 	Status            int    `json:"status"`

@@ -156,6 +156,27 @@ type RealtimeMessageCreatedEvent struct {
 	Payload RealtimeMessageCreatedPayload
 }
 
+type RealtimeMessageStreamPayload struct {
+	ConversationID int64  `json:"conversationId"`
+	RequestID      string `json:"requestId"`
+	Content        string `json:"content,omitempty"`
+}
+
+func (RealtimeMessageStreamPayload) realtimeEventPayload() {}
+
+type RealtimeMessageStreamEvent struct {
+	Type    string
+	Payload RealtimeMessageStreamPayload
+}
+
+func (e RealtimeMessageStreamEvent) EventType() string {
+	return e.Type
+}
+
+func (e RealtimeMessageStreamEvent) EventPayload() RealtimeEventPayload {
+	return e.Payload
+}
+
 func (e RealtimeMessageCreatedEvent) EventType() string {
 	return enums.IMRealtimeEventMessageCreated
 }
@@ -188,17 +209,23 @@ func (e RealtimeMessageRecalledEvent) EventPayload() RealtimeEventPayload {
 }
 
 type RealtimeConversationChangedPayload struct {
+	WorkStatus                enums.ConversationWorkStatus    `json:"workStatus"`
+	WorkRevision              int64                           `json:"workRevision"`
+	PendingSince              string                          `json:"pendingSince"`
+	ReplyDueAt                string                          `json:"replyDueAt"`
+	SnoozedUntil              string                          `json:"snoozedUntil"`
+	ReplyTargetMinutes        int                             `json:"replyTargetMinutes"`
 	ConversationID            int64                           `json:"conversationId,omitempty"`
 	Status                    enums.IMConversationStatus      `json:"status,omitempty"`
 	ServiceMode               enums.IMConversationServiceMode `json:"serviceMode,omitempty"`
-	CurrentAssigneeID         int64                           `json:"currentAssigneeId,omitempty"`
+	CurrentAssigneeID         int64                           `json:"currentAssigneeId"`
 	CurrentTeamID             int64                           `json:"currentTeamId,omitempty"`
 	LastMessageID             int64                           `json:"lastMessageId,omitempty"`
 	LastMessageAt             string                          `json:"lastMessageAt,omitempty"`
 	LastActiveAt              string                          `json:"lastActiveAt,omitempty"`
 	LastMessageSummary        string                          `json:"lastMessageSummary,omitempty"`
-	CustomerUnreadCount       int                             `json:"customerUnreadCount,omitempty"`
-	AgentUnreadCount          int                             `json:"agentUnreadCount,omitempty"`
+	CustomerUnreadCount       int                             `json:"customerUnreadCount"`
+	AgentUnreadCount          int                             `json:"agentUnreadCount"`
 	CustomerLastReadMessageID int64                           `json:"customerLastReadMessageId,omitempty"`
 	CustomerLastReadAt        string                          `json:"customerLastReadAt,omitempty"`
 	AgentLastReadMessageID    int64                           `json:"agentLastReadMessageId,omitempty"`

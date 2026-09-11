@@ -24,16 +24,25 @@ func (s *aiReplyService) resolveReplyTimeout(aiAgent models.AIAgent) time.Durati
 }
 
 func (s *aiReplyService) TriggerReplyAsync(conversation models.Conversation, message models.Message) {
-	go func() {
-		aiAgent := svc.AIAgentService.Get(conversation.AIAgentID)
+	if conversation.ID <= 0 || message.ID <= 0 {
+		return
+	}
+	s.queue.enqueue(conversation.ID, message.ID, func() {
+		// Queued work must not revive a recalled message or an old assignment.
+		current := svc.ConversationService.Get(conversation.ID)
+		stored := svc.MessageService.Get(message.ID)
+		if current == nil || stored == nil || stored.ConversationID != current.ID || current.AIAgentID != conversation.AIAgentID {
+			return
+		}
+		aiAgent := svc.AIAgentService.Get(current.AIAgentID)
 		if aiAgent == nil || aiAgent.Status != enums.StatusOk {
 			return
 		}
 		startedAt := time.Now()
 		timeout := s.resolveReplyTimeout(*aiAgent)
-		ctx, cancel := context.WithTimeout(tracex.ContextWithRequestID(context.Background(), message.RequestID), timeout)
+		ctx, cancel := context.WithTimeout(tracex.ContextWithRequestID(context.Background(), stored.RequestID), timeout)
 		defer cancel()
-		if err := s.TriggerReply(ctx, conversation, message, *aiAgent); err != nil {
+		if err := s.TriggerReply(ctx, *current, *stored, *aiAgent); err != nil {
 			slog.Error("failed to trigger ai reply",
 				"requestId", message.RequestID,
 				"message_id", message.ID,
@@ -41,7 +50,7 @@ func (s *aiReplyService) TriggerReplyAsync(conversation models.Conversation, mes
 				"elapsed_ms", time.Since(startedAt).Milliseconds(),
 				"error", err)
 		}
-	}()
+	})
 }
 
 func (s *aiReplyService) TriggerReply(ctx context.Context, conversation models.Conversation, message models.Message, aiAgent models.AIAgent) (retErr error) {
@@ -73,17 +82,27 @@ func (s *aiReplyService) resumePendingInterrupt(ctx context.Context, replyCtx ai
 }
 
 func (s *aiReplyService) executeReply(ctx context.Context, replyCtx aiReplyContext) error {
+	stream := newReplyStreamPublisher(replyCtx.Conversation, replyCtx.Message.RequestID)
+	stream.Start()
 	summary, err := s.executor.Run(ctx, runtimeReplyRunInput{
 		Conversation: replyCtx.Conversation,
 		Message:      replyCtx.Message,
 		AIAgent:      replyCtx.AIAgent,
+		OnStream:     stream.Handle,
 	})
 	replyCtx.setSummary(summary)
 	if err != nil {
+		stream.Fail()
 		return err
 	}
 	if summary != nil && summary.Interrupted {
-		return s.interrupts.HandleInterruptedSummary(s, replyCtx, summary)
+		err = s.interrupts.HandleInterruptedSummary(s, replyCtx, summary)
+		if err != nil {
+			stream.Fail()
+			return err
+		}
+		stream.Complete(summary.ReplyText)
+		return nil
 	}
 	if summary != nil && summary.HandoffRequested {
 		if _, err := svc.ConversationHumanDispatchService.HandoffByAIWithRequestID(
@@ -92,8 +111,10 @@ func (s *aiReplyService) executeReply(ctx context.Context, replyCtx aiReplyConte
 			summary.HandoffReason,
 			replyCtx.Message.RequestID,
 		); err != nil {
+			stream.Fail()
 			return err
 		}
+		stream.Complete("")
 		return nil
 	}
 	if summary != nil && strings.TrimSpace(summary.ReplyText) != "" {
@@ -106,8 +127,14 @@ func (s *aiReplyService) executeReply(ctx context.Context, replyCtx aiReplyConte
 			WorkflowRunID: summary.WorkflowRunID,
 		})
 		if err != nil {
+			stream.Fail()
 			return err
 		}
+	}
+	if summary != nil {
+		stream.Complete(summary.ReplyText)
+	} else {
+		stream.Complete("")
 	}
 	return nil
 }

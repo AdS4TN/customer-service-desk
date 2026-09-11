@@ -1,5 +1,6 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import { useCallback, useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 
@@ -7,8 +8,6 @@ import { cn } from "@/lib/utils"
 import { useConfirm } from "@/components/confirm-provider"
 
 import { htmlToMarkdown, markdownToHtml } from "./convert"
-import { HtmlEditor } from "./html-editor"
-import { MarkdownEditor } from "./markdown-editor"
 import {
   CONTENT_MODE_OPTIONS,
   type ContentMode,
@@ -16,6 +15,15 @@ import {
   type UploadImageHandler,
 } from "./types"
 import { useI18n } from "@/i18n/provider"
+
+const HtmlEditor = dynamic(
+  () => import("./html-editor").then((module) => module.HtmlEditor),
+  { ssr: false }
+)
+const MarkdownEditor = dynamic(
+  () => import("./markdown-editor").then((module) => module.MarkdownEditor),
+  { ssr: false }
+)
 
 type ContentEditorProps = {
   value: ContentValue

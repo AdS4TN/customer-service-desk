@@ -16,6 +16,7 @@ type ChunkPayload struct {
 	SectionPath     string `json:"section_path"`
 	Title           string `json:"title"`
 	Content         string `json:"content"`
+	ContextContent  string `json:"context_content"`
 	Provider        string `json:"provider"`
 }
 
@@ -38,6 +39,7 @@ func ChunkPayloadFromMap(data map[string]any) ChunkPayload {
 		SectionPath:     cast.ToString(data["section_path"]),
 		Title:           cast.ToString(data["title"]),
 		Content:         cast.ToString(data["content"]),
+		ContextContent:  cast.ToString(data["context_content"]),
 		Provider:        cast.ToString(data["provider"]),
 	}
 }

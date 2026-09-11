@@ -10,6 +10,9 @@ import (
 
 func Init() {
 	c := cron.New()
+	addFunc(c, "@every 30s", services.ConversationWorkService.ProcessDue)
+	addFunc(c, "@every 30s", services.SalesLeadService.ProcessDue)
+	addFunc(c, "@every 5s", services.ConversationMemoryService.ProcessPending)
 
 	addFunc(c, "0 4 ? * *", func() {
 		fmt.Println("cron test")
@@ -22,6 +25,8 @@ func Init() {
 	})
 
 	addFunc(c, "@every 5s", func() {
+		services.WhatsAppService.DispatchPendingOutbox()
+		services.MessengerService.DispatchPendingOutbox()
 		count := services.WxWorkKFOutboundService.DispatchPendingOutbox()
 		if count > 0 {
 			slog.Info("wxwork kf outbox dispatched", "count", count)

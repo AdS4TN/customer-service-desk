@@ -1,5 +1,23 @@
 package enums
 
+type ConversationWorkStatus string
+
+const (
+	ConversationWorkStatusNeedsReply      ConversationWorkStatus = "needs_reply"
+	ConversationWorkStatusWaitingCustomer ConversationWorkStatus = "waiting_customer"
+	ConversationWorkStatusSnoozed         ConversationWorkStatus = "snoozed"
+)
+
+var conversationWorkStatusLabelMap = map[ConversationWorkStatus]string{
+	ConversationWorkStatusNeedsReply:      "待回复",
+	ConversationWorkStatusWaitingCustomer: "等待客户",
+	ConversationWorkStatusSnoozed:         "暂缓",
+}
+
+func GetConversationWorkStatusLabel(status ConversationWorkStatus) string {
+	return conversationWorkStatusLabelMap[status]
+}
+
 type IMConversationStatus int
 
 const (
@@ -246,6 +264,10 @@ const (
 	IMRealtimeEventUnsubscribed            = "unsubscribed"
 	IMRealtimeEventResyncRequired          = "resyncRequired"
 	IMRealtimeEventMessageCreated          = "message.created"
+	IMRealtimeEventMessageStreamStarted    = "message.stream.started"
+	IMRealtimeEventMessageStreamDelta      = "message.stream.delta"
+	IMRealtimeEventMessageStreamCompleted  = "message.stream.completed"
+	IMRealtimeEventMessageStreamFailed     = "message.stream.failed"
 	IMRealtimeEventMessageRecalled         = "message.recalled"
 	IMRealtimeEventConversationCreated     = "conversation.created"
 	IMRealtimeEventConversationUpdated     = "conversation.updated"

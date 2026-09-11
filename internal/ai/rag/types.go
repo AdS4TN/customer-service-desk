@@ -18,6 +18,7 @@ type RetrieveResult struct {
 	Title           string  `json:"title"`
 	SectionPath     string  `json:"sectionPath"`
 	Content         string  `json:"content"`
+	MatchedContent  string  `json:"matchedContent,omitempty"`
 	Score           float32 `json:"score"`
 	ChunkType       string  `json:"chunkType"`
 }

@@ -35,7 +35,14 @@ type WidgetConfigResponse = {
   success?: boolean
   data?: Partial<Pick<
     AgentDeskConfig,
-    "title" | "subtitle" | "themeColor" | "position" | "width"
+    | "title"
+    | "subtitle"
+    | "agentName"
+    | "agentAvatar"
+    | "agentStatus"
+    | "themeColor"
+    | "position"
+    | "width"
   >>
 }
 
@@ -56,6 +63,14 @@ function getDefaultWidgetTitle(config?: NormalizedAgentDeskConfig | null) {
 
 function getLauncherText(config?: NormalizedAgentDeskConfig | null) {
   return normalizeWidgetLanguage(config?.language) === "en-US" ? "Support" : "\u5ba2\u670d"
+}
+
+function resolveWidgetAssetUrl(value: string, config: NormalizedAgentDeskConfig) {
+  try {
+    return new URL(value, config.apiBaseUrl || config.baseUrl || window.location.origin).toString()
+  } catch {
+    return value
+  }
 }
 
 type FrameMessage =
@@ -140,7 +155,8 @@ type FrameMessage =
     config: NormalizedAgentDeskConfig,
     userToken: string
   ): SupportChatRuntimeConfig {
-    const { getUserToken: _getUserToken, ...payload } = config
+    const payload = { ...config }
+    delete payload.getUserToken
     if (userToken) {
       return { ...payload, userToken }
     }
@@ -180,7 +196,16 @@ type FrameMessage =
       return config
     }
     const merged: NormalizedAgentDeskConfig = { ...config }
-    const remoteKeys = ["title", "subtitle", "themeColor", "position", "width"] as const
+    const remoteKeys = [
+      "title",
+      "subtitle",
+      "agentName",
+      "agentAvatar",
+      "agentStatus",
+      "themeColor",
+      "position",
+      "width",
+    ] as const
     remoteKeys.forEach((key) => {
       const value = remoteConfig[key]
       if (value !== undefined && value !== null) {
@@ -395,7 +420,7 @@ type FrameMessage =
 
     state.frame = document.createElement("iframe")
     state.frame.dataset.agentDeskWidget = "frame"
-    state.frame.title = state.config.title || getDefaultWidgetTitle(state.config)
+    state.frame.title = state.config.agentName || state.config.title || getDefaultWidgetTitle(state.config)
     state.frame.src = state.frameUrl.toString()
     applyFrameLayout()
     state.frame.style.display = "block"
@@ -461,7 +486,7 @@ type FrameMessage =
     const text = document.createElement("span")
     button.type = "button"
     button.dataset.agentDeskWidget = "launcher"
-    button.setAttribute("aria-label", config.title || getDefaultWidgetTitle(config))
+    button.setAttribute("aria-label", config.agentName || config.title || getDefaultWidgetTitle(config))
     icon.setAttribute("viewBox", "0 0 24 24")
     icon.setAttribute("fill", "none")
     icon.setAttribute("stroke", "currentColor")
@@ -499,7 +524,19 @@ type FrameMessage =
     button.style.font = "600 13px/1 sans-serif"
     button.style.boxShadow = "0 18px 40px rgba(15, 35, 65, 0.24)"
     button.style.cursor = "pointer"
-    button.appendChild(icon)
+    if (config.agentAvatar) {
+      const avatar = document.createElement("img")
+      avatar.src = resolveWidgetAssetUrl(config.agentAvatar, config)
+      avatar.alt = ""
+      avatar.style.width = "28px"
+      avatar.style.height = "28px"
+      avatar.style.objectFit = "cover"
+      avatar.style.borderRadius = "999px"
+      avatar.style.flex = "0 0 auto"
+      button.appendChild(avatar)
+    } else {
+      button.appendChild(icon)
+    }
     button.appendChild(text)
 
     button.addEventListener("click", () => {

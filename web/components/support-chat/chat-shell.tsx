@@ -1,7 +1,6 @@
 "use client"
 
 import {
-  HeadphonesIcon,
   Maximize2Icon,
   Minimize2Icon,
   MoreHorizontalIcon,
@@ -35,6 +34,7 @@ import {
 } from "@/lib/support-host-bridge"
 import { useSupportChatStore } from "@/lib/stores/support-chat"
 import { Button } from "@/components/ui/button"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   Dialog,
   DialogContent,
@@ -132,9 +132,11 @@ export function SupportChatShell() {
   const {
     title,
     subtitle,
+    agentAvatar,
     themeColor,
     conversation,
     messages,
+    streamingReply,
     messagesHasMore,
     messagesLoadingMore,
     loadOlderMessages,
@@ -156,9 +158,11 @@ export function SupportChatShell() {
     useShallow((state) => ({
       title: state.title,
       subtitle: state.subtitle,
+      agentAvatar: state.agentAvatar,
       themeColor: state.themeColor,
       conversation: state.conversation,
       messages: state.messages,
+      streamingReply: state.streamingReply,
       messagesHasMore: state.messagesHasMore,
       messagesLoadingMore: state.messagesLoadingMore,
       loadOlderMessages: state.loadOlderMessages,
@@ -194,7 +198,7 @@ export function SupportChatShell() {
     void markConversationRead().catch((readError) => {
       console.error("Failed to mark support chat conversation read", readError)
     })
-  }, [conversation?.id, isVisible, markConversationRead])
+  }, [conversation, isVisible, markConversationRead])
 
   useEffect(() => {
     return bindSupportHostBridge({
@@ -301,8 +305,11 @@ export function SupportChatShell() {
         <header className="shrink-0 border-b border-border/70 bg-card/95 px-3 py-2 shadow-[0_1px_0_rgba(15,23,42,0.02)] backdrop-blur dark:border-border/60 dark:bg-card/90 sm:px-4">
           <div className="flex min-w-0 items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
-              <div className="relative flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary ring-1 ring-primary/15 dark:bg-primary/15 dark:ring-primary/25">
-                <HeadphonesIcon className="size-4" />
+              <Avatar className="size-8">
+                {agentAvatar ? <AvatarImage src={agentAvatar} alt="" /> : null}
+                <AvatarFallback className="bg-primary/10 font-semibold text-primary">
+                  {title.trim().charAt(0).toUpperCase() || "AI"}
+                </AvatarFallback>
                 <span
                   className={cn(
                     "absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-card",
@@ -310,7 +317,7 @@ export function SupportChatShell() {
                   )}
                   aria-hidden="true"
                 />
-              </div>
+              </Avatar>
               <div className="min-w-0 space-y-0.5">
                 <div className="truncate text-sm font-semibold leading-5 text-foreground">
                   {title}
@@ -423,6 +430,9 @@ export function SupportChatShell() {
           <SupportChatMessageList
             ref={messageListRef}
             messages={safeMessages}
+            streamingReply={streamingReply}
+            assistantName={title}
+            assistantAvatar={agentAvatar}
             onNearBottomVisible={maybeMarkConversationRead}
             hasMoreOlder={messagesHasMore}
             loadingOlder={messagesLoadingMore}

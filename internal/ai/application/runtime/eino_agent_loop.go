@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -31,9 +32,76 @@ func einoAgentLoop(
 	maxSteps int,
 	execute ai.ToolCallExecutor,
 ) (*ai.ToolLoopResult, error) {
-	model, err := newEinoChatModel(ctx, config)
+	agent, messages, err := prepareEinoAgentLoop(ctx, config, systemPrompt, userPrompt, definitions, maxSteps, execute)
 	if err != nil {
 		return nil, err
+	}
+	result, err := agent.Generate(ctx, messages)
+	if err != nil {
+		return nil, err
+	}
+	return buildEinoToolLoopResult(result, config.ModelName)
+}
+
+func einoAgentLoopStream(
+	ctx context.Context,
+	config models.AIConfig,
+	systemPrompt string,
+	userPrompt string,
+	definitions []ai.ToolDefinition,
+	maxSteps int,
+	execute ai.ToolCallExecutor,
+	onDelta func(string),
+) (*ai.ToolLoopResult, error) {
+	agent, messages, err := prepareEinoAgentLoop(ctx, config, systemPrompt, userPrompt, definitions, maxSteps, execute)
+	if err != nil {
+		return nil, err
+	}
+	stream, err := agent.Stream(ctx, messages)
+	if err != nil {
+		return nil, err
+	}
+	defer stream.Close()
+
+	chunks := make([]*schema.Message, 0, 16)
+	for {
+		chunk, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			return nil, recvErr
+		}
+		if chunk == nil {
+			continue
+		}
+		chunks = append(chunks, chunk)
+		if onDelta != nil && chunk.Content != "" {
+			onDelta(chunk.Content)
+		}
+	}
+	if len(chunks) == 0 {
+		return nil, fmt.Errorf("Eino agent loop returned no result")
+	}
+	result, err := schema.ConcatMessages(chunks)
+	if err != nil {
+		return nil, fmt.Errorf("concat Eino agent stream: %w", err)
+	}
+	return buildEinoToolLoopResult(result, config.ModelName)
+}
+
+func prepareEinoAgentLoop(
+	ctx context.Context,
+	config models.AIConfig,
+	systemPrompt string,
+	userPrompt string,
+	definitions []ai.ToolDefinition,
+	maxSteps int,
+	execute ai.ToolCallExecutor,
+) (*react.Agent, []*schema.Message, error) {
+	model, err := newEinoChatModel(ctx, config)
+	if err != nil {
+		return nil, nil, err
 	}
 	if maxSteps <= 0 {
 		maxSteps = 6
@@ -42,7 +110,7 @@ func einoAgentLoop(
 	for _, definition := range definitions {
 		tool, buildErr := newEinoFunctionTool(definition, execute)
 		if buildErr != nil {
-			return nil, buildErr
+			return nil, nil, buildErr
 		}
 		tools = append(tools, tool)
 	}
@@ -52,23 +120,23 @@ func einoAgentLoop(
 		MaxStep:          maxSteps,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create Eino agent loop: %w", err)
+		return nil, nil, fmt.Errorf("create Eino agent loop: %w", err)
 	}
 	messages := make([]*schema.Message, 0, 2)
 	if value := strings.TrimSpace(systemPrompt); value != "" {
 		messages = append(messages, schema.SystemMessage(value))
 	}
 	messages = append(messages, schema.UserMessage(strings.TrimSpace(userPrompt)))
-	result, err := agent.Generate(ctx, messages)
-	if err != nil {
-		return nil, err
-	}
+	return agent, messages, nil
+}
+
+func buildEinoToolLoopResult(result *schema.Message, modelName string) (*ai.ToolLoopResult, error) {
 	if result == nil {
 		return nil, fmt.Errorf("Eino agent loop returned no result")
 	}
 	ret := &ai.ToolLoopResult{ChatCompletionResult: ai.ChatCompletionResult{
 		Content:   strings.TrimSpace(result.Content),
-		ModelName: config.ModelName,
+		ModelName: modelName,
 	}}
 	if result.ResponseMeta != nil && result.ResponseMeta.Usage != nil {
 		ret.PromptTokens = result.ResponseMeta.Usage.PromptTokens

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"strings"
+
 	"agent-desk/internal/pkg/dto/response"
 	"agent-desk/internal/pkg/enums"
 	"agent-desk/internal/pkg/errorsx"
@@ -30,6 +32,21 @@ func ChannelAnyConfig(ctx *gin.Context) {
 		ThemeColor:  cfg.ThemeColor,
 		Position:    cfg.Position,
 		Width:       cfg.Width,
+	}
+	if agent := services.AIAgentService.Get(channel.AIAgentID); agent != nil {
+		publishedAgent := services.AgentRevisionService.ResolvePublishedAgent(*agent)
+		ret.AgentName = strings.TrimSpace(publishedAgent.DisplayName)
+		if ret.AgentName == "" {
+			ret.AgentName = strings.TrimSpace(publishedAgent.Name)
+		}
+		ret.AgentAvatar = strings.TrimSpace(publishedAgent.Avatar)
+		ret.AgentStatus = strings.TrimSpace(publishedAgent.StatusText)
+	}
+	if ret.AgentName == "" {
+		ret.AgentName = ret.Title
+	}
+	if ret.AgentStatus == "" {
+		ret.AgentStatus = ret.Subtitle
 	}
 	httpx.WriteJSON(ctx, ret)
 }

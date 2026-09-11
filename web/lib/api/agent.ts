@@ -1,4 +1,5 @@
 import { request } from "@/lib/api/client"
+import type { ConversationWorkStatus } from "@/lib/generated/enums"
 
 export type Paging = {
   page: number
@@ -22,6 +23,25 @@ export type AgentConversationTag = {
   name: string
 }
 
+export type InboxChannel = {
+  id: number
+  name: string
+  channelType: string
+  status: number
+  connectionState?: string
+}
+
+export function fetchInboxChannels() {
+  return request<InboxChannel[]>("/api/dashboard/conversation/channels")
+}
+
+export function retryAgentMessage(messageId: number) {
+  return request<AgentMessage>("/api/dashboard/conversation/retry_message", {
+    method: "POST",
+    body: JSON.stringify({ messageId }),
+  })
+}
+
 export type AgentConversationParticipant = {
   id: number
   participantType: string
@@ -33,6 +53,12 @@ export type AgentConversationParticipant = {
 }
 
 export type AgentConversation = {
+	workStatus?: ConversationWorkStatus
+	workRevision?: number
+	pendingSince?: string
+	replyDueAt?: string
+	snoozedUntil?: string
+	replyTargetMinutes?: number
   id: number
   aiAgentId?: number
   channelId?: number

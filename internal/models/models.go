@@ -26,9 +26,14 @@ var Models = []any{
 	&Asset{},
 	&Tag{},
 	&Conversation{},
+	&ConversationMemory{},
+	&ConversationMemoryEntry{},
+	&SalesLead{},
+	&SalesLeadEvent{},
 	&ConversationParticipant{},
 	&ConversationReadState{},
 	&Message{},
+	&MessageTranslation{},
 	&WxWorkKFSyncState{},
 	&WxWorkKFConversation{},
 	&WxWorkKFMessageRef{},
@@ -43,6 +48,7 @@ var Models = []any{
 	&TicketView{},
 	&TicketNoSequence{},
 	&Notification{},
+	&ConversationNote{},
 	&AIAgent{},
 	&Channel{},
 	&AgentProfile{},
@@ -52,6 +58,7 @@ var Models = []any{
 	&KnowledgeBase{},
 	&KnowledgeDirectory{},
 	&KnowledgeDocument{},
+	&KnowledgeIngestionJob{},
 	&KnowledgeFAQ{},
 	&KnowledgeChunk{},
 	&KnowledgeRetrieveLog{},
@@ -237,16 +244,17 @@ type Company struct {
 //
 //	用于存储客户稳定画像信息，不包含平台身份映射和多联系方式明细。
 type Customer struct {
-	ID            int64        `gorm:"primaryKey;autoIncrement"`                    // ID 为客户主键。
-	UserID        int64        `gorm:"type:bigint;not null;default:0;index"`        // UserID 为关联的统一登录账号ID，0表示未绑定。
-	Name          string       `gorm:"type:varchar(100);not null;default:'';index"` // Name 为客户姓名或展示名称。
-	Gender        enums.Gender `gorm:"type:int;not null;default:0;"`                // Gender 为性别：0未知 1男 2女。
-	CompanyID     int64        `gorm:"type:bigint;not null;default:0;index"`        // CompanyID 为所属公司ID；0表示无所属公司（个人客户）。
-	LastActiveAt  *time.Time   // LastActiveAt 为最近活跃时间。
-	PrimaryMobile string       `gorm:"type:varchar(32);not null;default:'';index"`  // PrimaryMobile 为主手机号（冗余展示字段）。
-	PrimaryEmail  string       `gorm:"type:varchar(100);not null;default:'';index"` // PrimaryEmail 为主邮箱（冗余展示字段）。
-	Status        enums.Status `gorm:"type:int;not null;default:0;"`                // Status 为客户状态。
-	Remark        string       `gorm:"type:text"`                                   // Remark 为备注。
+	AIProfileProjection string       `gorm:"column:ai_profile_projection;type:text"`      // Ownership of AI-filled fields; never used to resolve identity.
+	ID                  int64        `gorm:"primaryKey;autoIncrement"`                    // ID 为客户主键。
+	UserID              int64        `gorm:"type:bigint;not null;default:0;index"`        // UserID 为关联的统一登录账号ID，0表示未绑定。
+	Name                string       `gorm:"type:varchar(100);not null;default:'';index"` // Name 为客户姓名或展示名称。
+	Gender              enums.Gender `gorm:"type:int;not null;default:0;"`                // Gender 为性别：0未知 1男 2女。
+	CompanyID           int64        `gorm:"type:bigint;not null;default:0;index"`        // CompanyID 为所属公司ID；0表示无所属公司（个人客户）。
+	LastActiveAt        *time.Time   // LastActiveAt 为最近活跃时间。
+	PrimaryMobile       string       `gorm:"type:varchar(32);not null;default:'';index"`  // PrimaryMobile 为主手机号（冗余展示字段）。
+	PrimaryEmail        string       `gorm:"type:varchar(100);not null;default:'';index"` // PrimaryEmail 为主邮箱（冗余展示字段）。
+	Status              enums.Status `gorm:"type:int;not null;default:0;"`                // Status 为客户状态。
+	Remark              string       `gorm:"type:text"`                                   // Remark 为备注。
 	AuditFields
 }
 
@@ -388,28 +396,36 @@ type Tag struct {
 
 // Conversation 客服会话。
 type Conversation struct {
-	ID                  int64                           `gorm:"primaryKey;autoIncrement"`                    // ID 为会话主键。
-	AIAgentID           int64                           `gorm:"type:bigint;not null;default:0;index"`        // AIAgentID 为当前会话绑定的 AI Agent ID。
-	ChannelID           int64                           `gorm:"type:bigint;not null;default:0;index"`        // ChannelID 为该会话来源接入渠道ID。
-	CustomerID          int64                           `gorm:"type:bigint;not null;default:0;index"`        // CustomerID 为会话所属客户 ID。
-	CustomerName        string                          `gorm:"type:varchar(100);not null;default:'';index"` // CustomerName 为客户名称冗余字段，用于列表展示和搜索。
-	Status              enums.IMConversationStatus      `gorm:"type:int;not null;default:1;index"`           // Status 为会话状态，如待接入、处理中、已关闭。
-	ServiceMode         enums.IMConversationServiceMode `gorm:"type:int;not null;default:3;index"`           // ServiceMode 为服务模式，如仅AI、仅人工、AI优先人工接管。
-	Priority            int                             `gorm:"type:int;not null;default:0;index"`           // Priority 为会话优先级。
-	CurrentAssigneeID   int64                           `gorm:"type:bigint;not null;default:0;index"`        // CurrentAssigneeID 为当前接待客服ID。
-	CurrentTeamID       int64                           `gorm:"type:bigint;not null;default:0;index"`        // CurrentTeamID 为当前处理客服组ID。
-	LastMessageID       int64                           `gorm:"type:bigint;not null;default:0;index"`        // LastMessageID 为最后一条消息ID。
-	LastMessageAt       time.Time                       `gorm:"index"`                                       // LastMessageAt 为最后消息时间。
-	LastActiveAt        time.Time                       `gorm:"index"`                                       // LastActiveAt 为会话最近活跃时间。
-	LastMessageSummary  string                          `gorm:"type:varchar(255);not null;default:''"`       // LastMessageSummary 为最后一条消息摘要。
-	CustomerUnreadCount int                             `gorm:"type:int;not null;default:0"`                 // CustomerUnreadCount 为用户侧未读数。
-	AgentUnreadCount    int                             `gorm:"type:int;not null;default:0"`                 // AgentUnreadCount 为客服侧未读数。
-	HandoffAt           *time.Time                      `gorm:"index"`                                       // HandoffAt 为最近一次转人工时间。
-	HandoffReason       string                          `gorm:"type:varchar(255);not null;default:''"`       // HandoffReason 为最近一次转人工原因。
-	AIReplyRounds       int                             `gorm:"type:int;not null;default:0"`                 // AIReplyRounds 为当前会话内 AI 已成功回复次数。
-	ClosedAt            *time.Time                      `gorm:"index"`                                       // ClosedAt 为会话关闭时间。
-	ClosedBy            int64                           `gorm:"type:bigint;not null;default:0;index"`        // ClosedBy 为关闭人用户ID，访客关闭时写0。
-	CloseReason         string                          `gorm:"type:varchar(255);not null;default:''"`       // CloseReason 为关闭原因。
+	WorkStatus            enums.ConversationWorkStatus `gorm:"type:varchar(30);not null;default:'waiting_customer';index"`
+	WorkRevision          int64                        `gorm:"not null;default:0"`
+	LastCustomerMessageID int64                        `gorm:"not null;default:0"`
+	PendingSince          *time.Time
+	ReplyDueAt            *time.Time                      `gorm:"index"`
+	SnoozedUntil          *time.Time                      `gorm:"index"`
+	ReplyTargetMinutes    int                             `gorm:"not null;default:15"`
+	ReminderRevision      int64                           `gorm:"not null;default:0"`
+	ID                    int64                           `gorm:"primaryKey;autoIncrement"`                    // ID 为会话主键。
+	AIAgentID             int64                           `gorm:"type:bigint;not null;default:0;index"`        // AIAgentID 为当前会话绑定的 AI Agent ID。
+	ChannelID             int64                           `gorm:"type:bigint;not null;default:0;index"`        // ChannelID 为该会话来源接入渠道ID。
+	CustomerID            int64                           `gorm:"type:bigint;not null;default:0;index"`        // CustomerID 为会话所属客户 ID。
+	CustomerName          string                          `gorm:"type:varchar(100);not null;default:'';index"` // CustomerName 为客户名称冗余字段，用于列表展示和搜索。
+	Status                enums.IMConversationStatus      `gorm:"type:int;not null;default:1;index"`           // Status 为会话状态，如待接入、处理中、已关闭。
+	ServiceMode           enums.IMConversationServiceMode `gorm:"type:int;not null;default:3;index"`           // ServiceMode 为服务模式，如仅AI、仅人工、AI优先人工接管。
+	Priority              int                             `gorm:"type:int;not null;default:0;index"`           // Priority 为会话优先级。
+	CurrentAssigneeID     int64                           `gorm:"type:bigint;not null;default:0;index"`        // CurrentAssigneeID 为当前接待客服ID。
+	CurrentTeamID         int64                           `gorm:"type:bigint;not null;default:0;index"`        // CurrentTeamID 为当前处理客服组ID。
+	LastMessageID         int64                           `gorm:"type:bigint;not null;default:0;index"`        // LastMessageID 为最后一条消息ID。
+	LastMessageAt         time.Time                       `gorm:"index"`                                       // LastMessageAt 为最后消息时间。
+	LastActiveAt          time.Time                       `gorm:"index"`                                       // LastActiveAt 为会话最近活跃时间。
+	LastMessageSummary    string                          `gorm:"type:varchar(255);not null;default:''"`       // LastMessageSummary 为最后一条消息摘要。
+	CustomerUnreadCount   int                             `gorm:"type:int;not null;default:0"`                 // CustomerUnreadCount 为用户侧未读数。
+	AgentUnreadCount      int                             `gorm:"type:int;not null;default:0"`                 // AgentUnreadCount 为客服侧未读数。
+	HandoffAt             *time.Time                      `gorm:"index"`                                       // HandoffAt 为最近一次转人工时间。
+	HandoffReason         string                          `gorm:"type:varchar(255);not null;default:''"`       // HandoffReason 为最近一次转人工原因。
+	AIReplyRounds         int                             `gorm:"type:int;not null;default:0"`                 // AIReplyRounds 为当前会话内 AI 已成功回复次数。
+	ClosedAt              *time.Time                      `gorm:"index"`                                       // ClosedAt 为会话关闭时间。
+	ClosedBy              int64                           `gorm:"type:bigint;not null;default:0;index"`        // ClosedBy 为关闭人用户ID，访客关闭时写0。
+	CloseReason           string                          `gorm:"type:varchar(255);not null;default:''"`       // CloseReason 为关闭原因。
 	AuditFields
 }
 
@@ -440,23 +456,25 @@ type ConversationReadState struct {
 
 // Message 会话消息。
 type Message struct {
-	ID              int64                 `gorm:"primaryKey;autoIncrement"`
-	ConversationID  int64                 `gorm:"type:bigint;not null;index;uniqueIndex:uk_conversation_client_msg"`
-	RequestID       string                `gorm:"type:varchar(128);not null;default:'';index"`
-	WorkflowRunID   int64                 `gorm:"type:bigint;not null;default:0;index"`
-	ClientMsgID     string                `gorm:"type:varchar(128);not null;default:'';uniqueIndex:uk_conversation_client_msg"`
-	SenderType      enums.IMSenderType    `gorm:"type:varchar(30);not null;default:'';index"`
-	SenderID        int64                 `gorm:"type:bigint;not null;default:0;index"`
-	ReceiverType    string                `gorm:"type:varchar(30);not null;default:'';index"`
-	MessageType     enums.IMMessageType   `gorm:"type:varchar(30);not null;default:'';index"`
-	Content         string                `gorm:"type:text"`
-	Payload         string                `gorm:"type:text"`
-	SendStatus      enums.IMMessageStatus `gorm:"type:int;not null;default:2;index"`
-	SentAt          *time.Time            `gorm:"index"`
-	DeliveredAt     *time.Time
-	ReadAt          *time.Time
-	RecalledAt      *time.Time
-	QuotedMessageID int64 `gorm:"type:bigint;not null;default:0;index"`
+	ReplyToCustomerMessageID int64                 `gorm:"not null;default:0"`
+	ID                       int64                 `gorm:"primaryKey;autoIncrement"`
+	IsHistorical             bool                  `gorm:"not null;default:false"` // Imported history does not count as a new unread message.
+	ConversationID           int64                 `gorm:"type:bigint;not null;index;uniqueIndex:uk_conversation_client_msg"`
+	RequestID                string                `gorm:"type:varchar(128);not null;default:'';index"`
+	WorkflowRunID            int64                 `gorm:"type:bigint;not null;default:0;index"`
+	ClientMsgID              string                `gorm:"type:varchar(128);not null;default:'';uniqueIndex:uk_conversation_client_msg"`
+	SenderType               enums.IMSenderType    `gorm:"type:varchar(30);not null;default:'';index"`
+	SenderID                 int64                 `gorm:"type:bigint;not null;default:0;index"`
+	ReceiverType             string                `gorm:"type:varchar(30);not null;default:'';index"`
+	MessageType              enums.IMMessageType   `gorm:"type:varchar(30);not null;default:'';index"`
+	Content                  string                `gorm:"type:text"`
+	Payload                  string                `gorm:"type:text"`
+	SendStatus               enums.IMMessageStatus `gorm:"type:int;not null;default:2;index"`
+	SentAt                   *time.Time            `gorm:"index"`
+	DeliveredAt              *time.Time
+	ReadAt                   *time.Time
+	RecalledAt               *time.Time
+	QuotedMessageID          int64 `gorm:"type:bigint;not null;default:0;index"`
 	AuditFields
 }
 
@@ -564,6 +582,9 @@ type QuickReply struct {
 type AIAgent struct {
 	ID                     int64                           `gorm:"primaryKey;autoIncrement"`                    // ID 为 AI Agent 主键。
 	Name                   string                          `gorm:"type:varchar(100);not null;default:'';index"` // Name 为 AI Agent 名称。
+	DisplayName            string                          `gorm:"type:varchar(100);not null;default:''"`       // DisplayName 为网页客服中向访客展示的名称。
+	Avatar                 string                          `gorm:"type:varchar(500);not null;default:''"`       // Avatar 为网页客服中向访客展示的头像地址。
+	StatusText             string                          `gorm:"type:varchar(100);not null;default:''"`       // StatusText 为网页客服标题栏中的简短状态文案。
 	Description            string                          `gorm:"type:varchar(255);not null;default:''"`       // Description 为 AI Agent 描述。
 	Status                 enums.Status                    `gorm:"type:int;not null;index"`                     // Status 为 AI Agent
 	AIConfigID             int64                           `gorm:"type:bigint;not null;default:0;index"`        // AIConfigID 为关联的 AI 配置ID。
@@ -573,19 +594,20 @@ type AIAgent struct {
 	KnowledgePolicy        string                          `gorm:"type:text"`                                   // KnowledgePolicy 为知识检索与无依据回答策略JSON。
 	ServiceMode            enums.IMConversationServiceMode `gorm:"type:int;not null;default:3;index"`           // ServiceMode 为服务模式，如仅AI、仅人工、AI优先人工接管。
 	SystemPrompt           string                          `gorm:"type:text"`                                   // SystemPrompt 为该 Agent 的系统提示词。
-	WelcomeMessage         string                          `gorm:"type:text"`                                   // WelcomeMessage 为该 Agent 的欢迎语或首响模板。
-	ReplyTimeoutSeconds    int                             `gorm:"type:int;not null;default:180"`               // ReplyTimeoutSeconds 为异步自动回复超时秒数。
-	RolloutPercent         int                             `gorm:"type:int;not null;default:100"`               // RolloutPercent 为该 Agent 的会话灰度百分比，100 表示全量。
-	PreviousRolloutPercent int                             `gorm:"type:int;not null;default:0"`                 // PreviousRolloutPercent 保存上一次生效的灰度比例，0 表示尚无可回滚值。
-	TeamIDs                string                          `gorm:"type:varchar(500);not null;default:''"`       // TeamIDs 为转人工时可路由的客服组ID列表，多个之间使用逗号分隔。
-	HandoffMode            enums.AIAgentHandoffMode        `gorm:"type:int;not null;default:1"`                 // HandoffMode 为转人工执行方式，如进入待接入池、进入默认客服组待接入池。
-	FallbackMode           enums.AIAgentFallbackMode       `gorm:"type:int;not null;default:1"`                 // FallbackMode 为知识不足时的回复策略。
-	FallbackMessage        string                          `gorm:"type:text"`                                   // FallbackMessage 为知识不足回复文案。
-	KnowledgeIDs           string                          `gorm:"type:varchar(500);not null;default:''"`       // KnowledgeIDs 为绑定的知识库ID列表，按顺序表示优先级。
-	SkillIDs               string                          `gorm:"type:varchar(500);not null;default:''"`       // SkillIDs 为绑定的技能ID列表，按顺序表示允许路由的范围。
-	AllowedMCPTools        string                          `gorm:"type:text"`                                   // AllowedMCPTools 为 Agent 允许调用的 MCP 工具白名单配置 JSON。
-	PublishedRevisionID    int64                           `gorm:"type:bigint;not null;default:0;index"`        // PublishedRevisionID 为当前已发布 Agent 配置快照ID。
-	SortNo                 int                             `gorm:"type:int;not null;default:0;index"`           // SortNo 为后台展示排序号。
+	ReceptionPolicy        string                          `gorm:"type:text"`
+	WelcomeMessage         string                          `gorm:"type:text"`                             // WelcomeMessage 为该 Agent 的欢迎语或首响模板。
+	ReplyTimeoutSeconds    int                             `gorm:"type:int;not null;default:180"`         // ReplyTimeoutSeconds 为异步自动回复超时秒数。
+	RolloutPercent         int                             `gorm:"type:int;not null;default:100"`         // RolloutPercent 为该 Agent 的会话灰度百分比，100 表示全量。
+	PreviousRolloutPercent int                             `gorm:"type:int;not null;default:0"`           // PreviousRolloutPercent 保存上一次生效的灰度比例，0 表示尚无可回滚值。
+	TeamIDs                string                          `gorm:"type:varchar(500);not null;default:''"` // TeamIDs 为转人工时可路由的客服组ID列表，多个之间使用逗号分隔。
+	HandoffMode            enums.AIAgentHandoffMode        `gorm:"type:int;not null;default:1"`           // HandoffMode 为转人工执行方式，如进入待接入池、进入默认客服组待接入池。
+	FallbackMode           enums.AIAgentFallbackMode       `gorm:"type:int;not null;default:1"`           // FallbackMode 为知识不足时的回复策略。
+	FallbackMessage        string                          `gorm:"type:text"`                             // FallbackMessage 为知识不足回复文案。
+	KnowledgeIDs           string                          `gorm:"type:varchar(500);not null;default:''"` // KnowledgeIDs 为绑定的知识库ID列表，按顺序表示优先级。
+	SkillIDs               string                          `gorm:"type:varchar(500);not null;default:''"` // SkillIDs 为绑定的技能ID列表，按顺序表示允许路由的范围。
+	AllowedMCPTools        string                          `gorm:"type:text"`                             // AllowedMCPTools 为 Agent 允许调用的 MCP 工具白名单配置 JSON。
+	PublishedRevisionID    int64                           `gorm:"type:bigint;not null;default:0;index"`  // PublishedRevisionID 为当前已发布 Agent 配置快照ID。
+	SortNo                 int                             `gorm:"type:int;not null;default:0;index"`     // SortNo 为后台展示排序号。
 	AuditFields
 }
 
@@ -890,6 +912,8 @@ type KnowledgeBase struct {
 	ChunkTargetTokens     int          `gorm:"type:int;not null;default:300"`                      // ChunkTargetTokens 为目标 chunk token 数。
 	ChunkMaxTokens        int          `gorm:"type:int;not null;default:400"`                      // ChunkMaxTokens 为单 chunk 最大 token 数。
 	ChunkOverlapTokens    int          `gorm:"type:int;not null;default:40"`                       // ChunkOverlapTokens 为相邻 chunk 重叠 token 数。
+	ParentChunkTokens     int          `gorm:"type:int;not null;default:900"`                      // ParentChunkTokens 为父子分块的父块目标 token 数。
+	ChildChunkTokens      int          `gorm:"type:int;not null;default:200"`                      // ChildChunkTokens 为父子分块的子块目标 token 数。
 	AnswerMode            int          `gorm:"type:int;not null;default:1"`                        // AnswerMode 为回答模式：1严格知识库模式 2辅助解释模式。
 	SortNo                int          `gorm:"type:int;not null;default:0;index"`                  // SortNo 为排序号，用于后台展示和知识库的人工排序管理。
 	Remark                string       `gorm:"type:text"`                                          // Remark 为备注。
@@ -910,17 +934,47 @@ type KnowledgeDirectory struct {
 
 // KnowledgeDocument 知识文档主表。
 type KnowledgeDocument struct {
-	ID              int64                              `gorm:"primaryKey;autoIncrement"`                          // ID 为文档主键。
-	KnowledgeBaseID int64                              `gorm:"type:bigint;not null;index"`                        // KnowledgeBaseID 为所属知识库ID。
-	DirectoryID     int64                              `gorm:"type:bigint;not null;default:0;index"`              // DirectoryID 为所属知识库内部目录 ID，0 表示根目录。
-	Title           string                             `gorm:"type:varchar(255);not null;default:'';index"`       // Title 为文档标题。
-	ContentType     enums.KnowledgeDocumentContentType `gorm:"type:varchar(20);not null;default:'html'"`          // ContentType 为内容类型：html/markdown。
-	Content         string                             `gorm:"type:text"`                                         // Content 为文档内容。
-	Status          enums.Status                       `gorm:"type:int;not null;default:0;index"`                 // Status 为状态
-	IndexStatus     enums.KnowledgeDocumentIndexStatus `gorm:"type:varchar(20);not null;default:'pending';index"` // IndexStatus 为索引状态：pending/indexed/failed。
-	IndexedAt       *time.Time                         `gorm:"index"`                                             // IndexedAt 为最近一次索引成功时间。
-	IndexError      string                             `gorm:"type:text"`                                         // IndexError 为最近一次索引失败信息。
-	ContentHash     string                             `gorm:"type:varchar(64);not null;default:'';index"`        // ContentHash 为内容哈希，用于变更检测。
+	ID                  int64                              `gorm:"primaryKey;autoIncrement"`                          // ID 为文档主键。
+	KnowledgeBaseID     int64                              `gorm:"type:bigint;not null;index"`                        // KnowledgeBaseID 为所属知识库ID。
+	DirectoryID         int64                              `gorm:"type:bigint;not null;default:0;index"`              // DirectoryID 为所属知识库内部目录 ID，0 表示根目录。
+	Title               string                             `gorm:"type:varchar(255);not null;default:'';index"`       // Title 为文档标题。
+	ContentType         enums.KnowledgeDocumentContentType `gorm:"type:varchar(20);not null;default:'html'"`          // ContentType 为内容类型：html/markdown。
+	Content             string                             `gorm:"type:text"`                                         // Content 为文档内容。
+	Status              enums.Status                       `gorm:"type:int;not null;default:0;index"`                 // Status 为状态
+	IndexStatus         enums.KnowledgeDocumentIndexStatus `gorm:"type:varchar(20);not null;default:'pending';index"` // IndexStatus 为索引状态：pending/indexed/failed。
+	IndexedAt           *time.Time                         `gorm:"index"`                                             // IndexedAt 为最近一次索引成功时间。
+	IndexError          string                             `gorm:"type:text"`                                         // IndexError 为最近一次索引失败信息。
+	ContentHash         string                             `gorm:"type:varchar(64);not null;default:'';index"`        // ContentHash 为内容哈希，用于变更检测。
+	ChunkConfigOverride bool                               `gorm:"not null;default:false"`                            // ChunkConfigOverride 表示是否覆盖知识库分块配置。
+	ChunkProvider       string                             `gorm:"type:varchar(30);not null;default:''"`              // ChunkProvider 为文档级分块策略。
+	ChunkTargetTokens   int                                `gorm:"type:int;not null;default:0"`                       // ChunkTargetTokens 为文档级目标 token 数。
+	ChunkMaxTokens      int                                `gorm:"type:int;not null;default:0"`                       // ChunkMaxTokens 为文档级最大 token 数。
+	ChunkOverlapTokens  int                                `gorm:"type:int;not null;default:0"`                       // ChunkOverlapTokens 为文档级重叠 token 数。
+	ParentChunkTokens   int                                `gorm:"type:int;not null;default:0"`                       // ParentChunkTokens 为文档级父块目标 token 数。
+	ChildChunkTokens    int                                `gorm:"type:int;not null;default:0"`                       // ChildChunkTokens 为文档级子块目标 token 数。
+	SourceAssetID       int64                              `gorm:"type:bigint;not null;default:0;index"`              // SourceAssetID 为上传原始文件对应的资产 ID。
+	AuditFields
+}
+
+// KnowledgeIngestionJob records the durable document ingestion pipeline.
+type KnowledgeIngestionJob struct {
+	ID              int64      `gorm:"primaryKey;autoIncrement"`
+	KnowledgeBaseID int64      `gorm:"type:bigint;not null;index"`
+	DocumentID      int64      `gorm:"type:bigint;not null;index"`
+	AssetID         int64      `gorm:"type:bigint;not null;index"`
+	Status          string     `gorm:"type:varchar(20);not null;default:'queued';index"`
+	Stage           string     `gorm:"type:varchar(20);not null;default:'queued';index"`
+	Parser          string     `gorm:"type:varchar(40);not null;default:''"`
+	ChunkCount      int        `gorm:"type:int;not null;default:0"`
+	Progress        int        `gorm:"type:int;not null;default:0"`
+	ParseMS         int64      `gorm:"type:bigint;not null;default:0"`
+	ChunkMS         int64      `gorm:"type:bigint;not null;default:0"`
+	EmbeddingMS     int64      `gorm:"type:bigint;not null;default:0"`
+	IndexMS         int64      `gorm:"type:bigint;not null;default:0"`
+	Attempts        int        `gorm:"type:int;not null;default:0"`
+	Error           string     `gorm:"type:text"`
+	StartedAt       *time.Time `gorm:"index"`
+	FinishedAt      *time.Time `gorm:"index"`
 	AuditFields
 }
 
@@ -949,6 +1003,7 @@ type KnowledgeChunk struct {
 	ChunkNo         int          `gorm:"type:int;not null;default:0;index"`           // ChunkNo 为切片序号。
 	Title           string       `gorm:"type:varchar(255);not null;default:''"`       // Title 为切片标题。
 	Content         string       `gorm:"type:text"`                                   // Content 为切片内容。
+	ContextContent  string       `gorm:"type:text"`                                   // ContextContent 为命中后提供给模型的父块内容。
 	ContentHash     string       `gorm:"type:varchar(64);not null;default:'';index"`  // ContentHash 为内容哈希。
 	CharCount       int          `gorm:"type:int;not null;default:0"`                 // CharCount 为字符数。
 	TokenCount      int          `gorm:"type:int;not null;default:0"`                 // TokenCount 为token数。

@@ -3,6 +3,7 @@ package services
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"log/slog"
 
 	"agent-desk/internal/models"
@@ -125,11 +126,17 @@ func (s *customerService) EnsureExternalCustomer(ctx *sqls.TxContext, externalUs
 	}
 	now := time.Now()
 	if identity := repositories.CustomerIdentityRepository.GetBy(ctx.Tx, externalSource, externalID); identity != nil {
+		current := repositories.CustomerRepository.Get(ctx.Tx, identity.CustomerID)
+		var projection customerProfileProjection
+		if current != nil {
+			_ = json.Unmarshal([]byte(current.AIProfileProjection), &projection)
+		}
+		updateName := strs.IsNotBlank(externalUser.ExternalName) && current != nil && current.UpdateUserID == 0 && projection.Name == ""
 		updates := map[string]any{
 			"last_active_at": now,
 			"updated_at":     now,
 		}
-		if strs.IsNotBlank(externalUser.ExternalName) {
+		if updateName {
 			updates["name"] = externalUser.ExternalName
 		}
 		if err := repositories.CustomerRepository.Updates(ctx.Tx, identity.CustomerID, updates); err != nil {
@@ -137,7 +144,7 @@ func (s *customerService) EnsureExternalCustomer(ctx *sqls.TxContext, externalUs
 		}
 
 		ctx.RegisterCallback(func() {
-			if strs.IsNotBlank(externalUser.ExternalName) {
+			if updateName {
 				if err := s.syncConversationCustomerName(sqls.DB(), identity.CustomerID, externalUser.ExternalName, nil, now); err != nil {
 					slog.Error("sync conversation customer name failed",
 						"customerId", identity.CustomerID,

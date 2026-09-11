@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	defaultTargetTokens  = 300
-	defaultMaxTokens     = 400
-	defaultOverlapTokens = 40
+	defaultTargetTokens = 300
+	defaultMaxTokens    = 400
+	defaultParentTokens = 900
+	defaultChildTokens  = 200
 )
 
 func normalizeOptions(opts ChunkOptions) ChunkOptions {
@@ -28,13 +29,26 @@ func normalizeOptions(opts ChunkOptions) ChunkOptions {
 	if opts.OverlapTokens < 0 {
 		opts.OverlapTokens = 0
 	}
-	if opts.OverlapTokens == 0 {
-		opts.OverlapTokens = defaultOverlapTokens
+	if opts.OverlapTokens >= opts.MaxTokens {
+		opts.OverlapTokens = opts.MaxTokens / 4
+	}
+	if opts.ParentTokens <= 0 {
+		opts.ParentTokens = defaultParentTokens
+	}
+	if opts.ChildTokens <= 0 {
+		opts.ChildTokens = defaultChildTokens
+	}
+	if opts.ParentTokens < opts.ChildTokens {
+		opts.ParentTokens = opts.ChildTokens
 	}
 	if opts.Provider == "" {
 		opts.Provider = string(enums.KnowledgeChunkProviderStructured)
 	}
 	return opts
+}
+
+func NormalizeOptions(opts ChunkOptions) ChunkOptions {
+	return normalizeOptions(opts)
 }
 
 func normalizeText(text string) string {
@@ -129,7 +143,7 @@ func tailTextByTokens(text string, tokenLimit int) string {
 }
 
 func splitPlainText(text string, opts ChunkOptions) []string {
-	text = normalizeText(text)
+	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil
 	}
@@ -142,49 +156,60 @@ func splitPlainText(text string, opts ChunkOptions) []string {
 	chunks := make([]string, 0)
 	current := make([]string, 0)
 	currentTokens := 0
+	dirty := false
 
-	flush := func() {
-		if len(current) == 0 {
-			return
+	flush := func() string {
+		if len(current) == 0 || !dirty {
+			return ""
 		}
-		chunks = append(chunks, strings.Join(current, " "))
+		value := strings.TrimSpace(strings.Join(current, " "))
+		if value != "" {
+			chunks = append(chunks, value)
+		}
+		return value
 	}
 
-	for _, sentence := range sentences {
-		sentenceTokens := estimateTokenCount(sentence)
-		if sentenceTokens > opts.MaxTokens {
-			if len(current) > 0 {
-				flush()
-				overlap := tailTextByTokens(strings.Join(current, " "), opts.OverlapTokens)
-				current = nil
-				currentTokens = 0
-				if overlap != "" {
-					current = append(current, overlap)
-					currentTokens = estimateTokenCount(overlap)
-				}
-			}
-			for _, piece := range splitLongSentence(sentence, opts.MaxTokens) {
-				piece = normalizeText(piece)
-				if piece != "" {
-					chunks = append(chunks, piece)
-				}
-			}
-			continue
+	appendPiece := func(piece string) {
+		piece = normalizeText(piece)
+		if piece == "" {
+			return
 		}
-
-		if currentTokens > 0 && currentTokens+sentenceTokens > opts.MaxTokens {
-			flush()
-			overlap := tailTextByTokens(strings.Join(current, " "), opts.OverlapTokens)
+		pieceTokens := estimateTokenCount(piece)
+		if currentTokens > 0 && currentTokens+pieceTokens > opts.MaxTokens {
+			flushed := flush()
+			overlap := tailTextByTokens(flushed, opts.OverlapTokens)
 			current = nil
 			currentTokens = 0
+			dirty = false
 			if overlap != "" {
 				current = append(current, overlap)
 				currentTokens = estimateTokenCount(overlap)
 			}
 		}
+		current = append(current, piece)
+		currentTokens += pieceTokens
+		dirty = true
+		if currentTokens >= opts.TargetTokens {
+			flushed := flush()
+			overlap := tailTextByTokens(flushed, opts.OverlapTokens)
+			current = nil
+			currentTokens = 0
+			dirty = false
+			if overlap != "" {
+				current = append(current, overlap)
+				currentTokens = estimateTokenCount(overlap)
+			}
+		}
+	}
 
-		current = append(current, sentence)
-		currentTokens += sentenceTokens
+	for _, sentence := range sentences {
+		if estimateTokenCount(sentence) > opts.MaxTokens {
+			for _, piece := range splitLongSentence(sentence, opts.MaxTokens) {
+				appendPiece(piece)
+			}
+			continue
+		}
+		appendPiece(sentence)
 	}
 
 	flush()
@@ -199,20 +224,42 @@ func splitLongSentence(text string, maxTokens int) []string {
 	if maxTokens <= 0 {
 		return []string{text}
 	}
-	window := maxTokens * 2
-	if window < 50 {
-		window = 50
-	}
 	var result []string
-	for start := 0; start < len(runes); start += window {
-		end := start + window
-		if end > len(runes) {
-			end = len(runes)
+	start := 0
+	for start < len(runes) {
+		end := start
+		count := 0
+		inWord := false
+		for end < len(runes) {
+			increment, nextInWord := tokenIncrement(runes[end], inWord)
+			if count > 0 && count+increment > maxTokens {
+				break
+			}
+			count += increment
+			inWord = nextInWord
+			end++
 		}
 		part := normalizeText(string(runes[start:end]))
 		if part != "" {
 			result = append(result, part)
 		}
+		start = end
 	}
 	return result
+}
+
+func tokenIncrement(r rune, inWord bool) (int, bool) {
+	switch {
+	case unicode.IsSpace(r):
+		return 0, false
+	case unicode.Is(unicode.Han, r):
+		return 1, false
+	case unicode.IsLetter(r) || unicode.IsDigit(r):
+		if inWord {
+			return 0, true
+		}
+		return 1, true
+	default:
+		return 1, false
+	}
 }

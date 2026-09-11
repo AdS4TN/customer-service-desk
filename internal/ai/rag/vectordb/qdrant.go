@@ -157,6 +157,35 @@ func (p *QdrantProvider) DeleteVectors(ctx context.Context, collectionName strin
 	return nil
 }
 
+func (p *QdrantProvider) DeleteVectorsByFilter(ctx context.Context, collectionName string, filter *SearchFilter) error {
+	qdrantFilter := p.buildFilter(filter)
+	if qdrantFilter == nil {
+		return fmt.Errorf("qdrant vector deletion requires a non-empty filter")
+	}
+	_, err := p.client.Delete(ctx, &qdrant.DeletePoints{
+		CollectionName: collectionName,
+		Points: &qdrant.PointsSelector{
+			PointsSelectorOneOf: &qdrant.PointsSelector_Filter{Filter: qdrantFilter},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete filtered vectors from collection %s: %w", collectionName, err)
+	}
+	return nil
+}
+
+func (p *QdrantProvider) CountVectors(ctx context.Context, collectionName string, filter *SearchFilter) (int64, error) {
+	count, err := p.client.Count(ctx, &qdrant.CountPoints{
+		CollectionName: collectionName,
+		Filter:         p.buildFilter(filter),
+		Exact:          qdrant.PtrOf(true),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to count vectors in collection %s: %w", collectionName, err)
+	}
+	return int64(count), nil
+}
+
 func (p *QdrantProvider) Search(ctx context.Context, req *SearchRequest) ([]SearchResult, error) {
 	filter := p.buildFilter(req.Filter)
 
@@ -201,12 +230,15 @@ func (p *QdrantProvider) buildFilter(filter *SearchFilter) *qdrant.Filter {
 		return nil
 	}
 
-	must := make([]*qdrant.Condition, 0, 2)
+	must := make([]*qdrant.Condition, 0, 3)
 	if len(filter.KnowledgeBaseIDs) > 0 {
 		must = append(must, qdrant.NewMatchInts("knowledge_base_id", filter.KnowledgeBaseIDs...))
 	}
 	if len(filter.DocumentIDs) > 0 {
 		must = append(must, qdrant.NewMatchInts("document_id", filter.DocumentIDs...))
+	}
+	if len(filter.FAQIDs) > 0 {
+		must = append(must, qdrant.NewMatchInts("faq_id", filter.FAQIDs...))
 	}
 	if len(must) == 0 {
 		return nil

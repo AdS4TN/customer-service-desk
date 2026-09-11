@@ -16,6 +16,7 @@ import (
 
 type ChatCompletionResult struct {
 	Content          string
+	FinishReason     string
 	ModelName        string
 	PromptTokens     int
 	CompletionTokens int
@@ -74,6 +75,7 @@ func (s *llm) ChatWithConfig(ctx context.Context, config models.AIConfig, system
 	content := strings.TrimSpace(chatResp.Choices[0].Message.Content)
 	return &ChatCompletionResult{
 		Content:          content,
+		FinishReason:     chatResp.Choices[0].FinishReason,
 		ModelName:        config.ModelName,
 		PromptTokens:     int(chatResp.Usage.PromptTokens),
 		CompletionTokens: int(chatResp.Usage.CompletionTokens),

@@ -39,6 +39,7 @@ func (s *retrieve) searchKnowledgeBaseVectors(ctx context.Context, req RetrieveR
 		topK, scoreThreshold := resolveKnowledgeBaseSearchOptions(req, &knowledgeBase)
 		kbResults, searchErr := provider.Search(ctx, &vectordb.SearchRequest{
 			CollectionName: collectionName,
+			Query:          req.Query,
 			Vector:         embeddingResult.Vector,
 			TopK:           topK,
 			ScoreThreshold: scoreThreshold,
@@ -79,32 +80,22 @@ func (s *retrieve) hydrateRetrieveResults(searchResults []vectordb.SearchResult)
 
 	hydrateStartedAt := time.Now()
 	results := make([]RetrieveResult, 0, len(searchResults))
-	vectorIDs := make([]string, 0, len(searchResults))
-	for _, sr := range searchResults {
-		if strings.TrimSpace(sr.ID) == "" {
-			continue
-		}
-		vectorIDs = append(vectorIDs, sr.ID)
-	}
-	chunks := repositories.KnowledgeChunkRepository.FindByVectorIDs(sqls.DB(), vectorIDs)
-	chunkByVectorID := make(map[string]*models.KnowledgeChunk, len(chunks))
 	documentIDs := make([]int64, 0)
 	faqIDs := make([]int64, 0)
 	documentSeen := make(map[int64]struct{})
 	faqSeen := make(map[int64]struct{})
-	for i := range chunks {
-		chunk := &chunks[i]
-		chunkByVectorID[chunk.VectorID] = chunk
-		if chunk.DocumentID > 0 {
-			if _, ok := documentSeen[chunk.DocumentID]; !ok {
-				documentSeen[chunk.DocumentID] = struct{}{}
-				documentIDs = append(documentIDs, chunk.DocumentID)
+	for _, sr := range searchResults {
+		payload := sr.Payload
+		if payload.DocumentID > 0 {
+			if _, ok := documentSeen[payload.DocumentID]; !ok {
+				documentSeen[payload.DocumentID] = struct{}{}
+				documentIDs = append(documentIDs, payload.DocumentID)
 			}
 		}
-		if chunk.FaqID > 0 {
-			if _, ok := faqSeen[chunk.FaqID]; !ok {
-				faqSeen[chunk.FaqID] = struct{}{}
-				faqIDs = append(faqIDs, chunk.FaqID)
+		if payload.FaqID > 0 {
+			if _, ok := faqSeen[payload.FaqID]; !ok {
+				faqSeen[payload.FaqID] = struct{}{}
+				faqIDs = append(faqIDs, payload.FaqID)
 			}
 		}
 	}
@@ -121,41 +112,45 @@ func (s *retrieve) hydrateRetrieveResults(searchResults []vectordb.SearchResult)
 		faqByID[faq.ID] = faq
 	}
 	for _, sr := range searchResults {
-		chunk := chunkByVectorID[sr.ID]
-		if chunk == nil || chunk.Status != enums.StatusOk {
+		payload := sr.Payload
+		if strings.TrimSpace(payload.Content) == "" {
 			continue
 		}
 
-		documentTitle := ""
-		faqQuestion := ""
-		if chunk.DocumentID > 0 {
-			document := documentByID[chunk.DocumentID]
+		documentTitle := payload.DocumentTitle
+		faqQuestion := payload.FaqQuestion
+		if payload.DocumentID > 0 {
+			document := documentByID[payload.DocumentID]
 			if document == nil || document.Status != enums.StatusOk {
 				continue
 			}
 			documentTitle = document.Title
 		}
-		if chunk.FaqID > 0 {
-			faq := faqByID[chunk.FaqID]
+		if payload.FaqID > 0 {
+			faq := faqByID[payload.FaqID]
 			if faq == nil || faq.Status != enums.StatusOk {
 				continue
 			}
 			faqQuestion = faq.Question
 		}
 
+		contextContent := strings.TrimSpace(payload.ContextContent)
+		if contextContent == "" {
+			contextContent = payload.Content
+		}
 		results = append(results, RetrieveResult{
-			KnowledgeBaseID: chunk.KnowledgeBaseID,
-			ChunkID:         chunk.ID,
-			DocumentID:      chunk.DocumentID,
+			KnowledgeBaseID: payload.KnowledgeBaseID,
+			DocumentID:      payload.DocumentID,
 			DocumentTitle:   documentTitle,
-			FaqID:           chunk.FaqID,
+			FaqID:           payload.FaqID,
 			FaqQuestion:     faqQuestion,
-			ChunkNo:         chunk.ChunkNo,
-			Title:           chunk.Title,
-			SectionPath:     chunk.SectionPath,
-			Content:         chunk.Content,
+			ChunkNo:         payload.ChunkNo,
+			Title:           payload.Title,
+			SectionPath:     payload.SectionPath,
+			Content:         contextContent,
+			MatchedContent:  payload.Content,
 			Score:           sr.Score,
-			ChunkType:       extractChunkType(sr.Payload),
+			ChunkType:       extractChunkType(payload),
 		})
 	}
 

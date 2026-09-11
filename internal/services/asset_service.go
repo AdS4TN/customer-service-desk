@@ -72,12 +72,22 @@ func (s *assetService) UploadBytes(data []byte, prefix, filename string, princip
 }
 
 func (s *assetService) UploadFile(file *multipart.FileHeader, prefix string, principal *dto.AuthPrincipal) (*models.Asset, error) {
+	return s.uploadFile(file, prefix, principal, true)
+}
+
+// UploadFileWithoutSizeLimit is reserved for persisted knowledge ingestion jobs.
+// Large files are streamed to storage and processed asynchronously.
+func (s *assetService) UploadFileWithoutSizeLimit(file *multipart.FileHeader, prefix string, principal *dto.AuthPrincipal) (*models.Asset, error) {
+	return s.uploadFile(file, prefix, principal, false)
+}
+
+func (s *assetService) uploadFile(file *multipart.FileHeader, prefix string, principal *dto.AuthPrincipal, enforceLimit bool) (*models.Asset, error) {
 	if file == nil {
 		return nil, errorsx.InvalidParamI18n("error.e0323")
 	}
 
 	cfg := config.Current()
-	if file.Size > cfg.Storage.MaxUploadSizeBytes() {
+	if enforceLimit && file.Size > cfg.Storage.MaxUploadSizeBytes() {
 		return nil, errorsx.InvalidParamI18n("error.e0079")
 	}
 

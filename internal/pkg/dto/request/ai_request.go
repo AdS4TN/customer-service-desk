@@ -1,6 +1,9 @@
 package request
 
-import "agent-desk/internal/pkg/enums"
+import (
+	"agent-desk/internal/pkg/enums"
+	"agent-desk/internal/pkg/reception"
+)
 
 type AIAgentMCPToolRequest struct {
 	ToolCode            string            `json:"toolCode"`
@@ -54,6 +57,9 @@ type UpdateAIConfigStatusRequest struct {
 
 type CreateAIAgentRequest struct {
 	Name                string                          `json:"name"`
+	DisplayName         string                          `json:"displayName"`
+	Avatar              string                          `json:"avatar"`
+	StatusText          string                          `json:"statusText"`
 	Description         string                          `json:"description"`
 	AIConfigID          int64                           `json:"aiConfigId"`
 	MaxSteps            int                             `json:"maxSteps"`
@@ -62,6 +68,7 @@ type CreateAIAgentRequest struct {
 	KnowledgePolicy     string                          `json:"knowledgePolicy"`
 	ServiceMode         enums.IMConversationServiceMode `json:"serviceMode"`
 	SystemPrompt        string                          `json:"systemPrompt"`
+	ReceptionPolicy     *reception.Policy               `json:"receptionPolicy"`
 	WelcomeMessage      string                          `json:"welcomeMessage"`
 	ReplyTimeoutSeconds int                             `json:"replyTimeoutSeconds"`
 	RolloutPercent      int                             `json:"rolloutPercent"`

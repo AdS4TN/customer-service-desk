@@ -125,6 +125,10 @@ func requestLogMiddleware() gin.HandlerFunc {
 func maxBodySizeMiddleware() gin.HandlerFunc {
 	limit := config.Current().Storage.MaxRequestBodySizeBytes()
 	return func(ctx *gin.Context) {
+		if ctx.Request.URL.Path == "/api/dashboard/knowledge-document/upload" {
+			ctx.Next()
+			return
+		}
 		ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, limit)
 		ctx.Next()
 	}

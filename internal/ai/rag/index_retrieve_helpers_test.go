@@ -5,7 +5,42 @@ import (
 	"testing"
 
 	"agent-desk/internal/models"
+	"agent-desk/internal/pkg/enums"
 )
+
+func TestBuildDocumentChunkRequestUsesDocumentOverride(t *testing.T) {
+	service := &index{chunkConfig: ChunkingConfig{Provider: "structured", TargetTokens: 300, MaxTokens: 400, OverlapTokens: 40}}
+	base := models.KnowledgeBase{
+		ChunkProvider:      "structured",
+		ChunkTargetTokens:  300,
+		ChunkMaxTokens:     400,
+		ChunkOverlapTokens: 40,
+		ParentChunkTokens:  900,
+		ChildChunkTokens:   200,
+	}
+	document := models.KnowledgeDocument{
+		ContentType:         enums.KnowledgeDocumentContentTypeMarkdown,
+		Content:             "测试内容",
+		ChunkConfigOverride: true,
+		ChunkProvider:       "parent_child",
+		ChunkTargetTokens:   120,
+		ChunkMaxTokens:      180,
+		ChunkOverlapTokens:  0,
+		ParentChunkTokens:   700,
+		ChildChunkTokens:    120,
+	}
+
+	options := service.buildDocumentChunkRequest(document, base).Options
+	if options.Provider != "parent_child" || options.TargetTokens != 120 || options.MaxTokens != 180 {
+		t.Fatalf("unexpected document override: %#v", options)
+	}
+	if options.OverlapTokens != 0 {
+		t.Fatalf("zero overlap was not preserved: %#v", options)
+	}
+	if options.ParentTokens != 700 || options.ChildTokens != 120 {
+		t.Fatalf("unexpected parent-child options: %#v", options)
+	}
+}
 
 func TestBuildFAQChunkContent(t *testing.T) {
 	faq := models.KnowledgeFAQ{
@@ -66,6 +101,22 @@ func TestNormalizeContextResultsMergesAndDedupes(t *testing.T) {
 	}
 	if results[1].Content != "独立段" {
 		t.Fatalf("expected section duplicates to be removed after merge, got %q", results[1].Content)
+	}
+}
+
+func TestNormalizeContextResultsDedupesChildrenWithSameParent(t *testing.T) {
+	results := normalizeContextResults([]RetrieveResult{
+		{DocumentID: 1, ChunkNo: 1, SectionPath: "A", Content: "完整父块", MatchedContent: "子块一", Score: 0.7},
+		{DocumentID: 1, ChunkNo: 2, SectionPath: "A", Content: "完整父块", MatchedContent: "子块二", Score: 0.9},
+	})
+	if len(results) != 1 {
+		t.Fatalf("expected one parent context, got %d", len(results))
+	}
+	if results[0].Content != "完整父块" {
+		t.Fatalf("parent context was duplicated: %q", results[0].Content)
+	}
+	if results[0].Score != 0.9 {
+		t.Fatalf("expected highest child score, got %v", results[0].Score)
 	}
 }
 

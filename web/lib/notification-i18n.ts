@@ -23,6 +23,12 @@ export function localizeNotificationItem<T extends LocalizableNotification>(
   locale: string
 ): T {
   const normalizedLocale = normalizeLocale(locale)
+  if (notification.notificationType === "lead_assigned" || notification.notificationType === "lead_overdue") {
+    return { ...notification, title: translateMessage(normalizedLocale, notification.notificationType === "lead_assigned" ? "leadWork.assignedNotice" : "leadWork.dueNotice") }
+  }
+  if (notification.notificationType === "reply_overdue" || notification.notificationType === "conversation_mention") {
+    return { ...notification, title: translateMessage(normalizedLocale, notification.notificationType === "reply_overdue" ? "reception.overdue" : "reception.mentioned") }
+  }
   if (normalizedLocale !== "en-US") {
     return notification
   }

@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
 import type { AgentConversation } from "@/lib/api/agent";
 import {
   fetchAIWorkflowRun,
@@ -66,6 +67,10 @@ import {
   ConversationTagPicker,
 } from "./conversation-tag-picker";
 import { TicketStatusBadge } from "../../tickets/_components/ticket-status-badge";
+import { ConversationMemorySection, CustomerAutoTagsSection } from "./conversation-memory";
+import { ConversationCopilot } from "./conversation-copilot";
+import { ConversationLeads } from "./conversation-leads";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 function contactTypeLabel(
   contactType: ContactType | string,
@@ -262,8 +267,26 @@ export function ConversationInfoPanel({
                 valueClassName="font-mono text-xs"
               />
             </section>
-            <CustomerBody conversation={conversation} />
-            <WorkflowRunsSection conversation={conversation} />
+            <Tabs defaultValue="copilot">
+              <TabsList variant="line" className="w-full">
+                <TabsTrigger value="copilot">{t("copilot.title")}</TabsTrigger>
+                <TabsTrigger value="customer">{t("copilot.customer")}</TabsTrigger>
+                <TabsTrigger value="leads">{t("lead.title")}</TabsTrigger>
+              </TabsList>
+              <TabsContent value="copilot" keepMounted className="min-w-0 pt-3">
+                <div className="flex flex-col gap-4">
+                  <ConversationCopilot conversation={conversation} />
+                  <ConversationMemorySection conversation={conversation} />
+                </div>
+              </TabsContent>
+              <TabsContent value="customer" className="min-w-0 pt-3">
+                <CustomerBody conversation={conversation} />
+                <WorkflowRunsSection conversation={conversation} />
+              </TabsContent>
+              <TabsContent value="leads" className="min-w-0 pt-3">
+                <ConversationLeads key={conversation.id} conversationId={conversation.id} />
+              </TabsContent>
+            </Tabs>
           </div>
         )}
       </div>
@@ -273,8 +296,10 @@ export function ConversationInfoPanel({
 
 function ConversationTagSection({
   conversation,
+  onProfileChanged,
 }: {
   conversation: AgentConversation;
+  onProfileChanged?: () => Promise<void>;
 }) {
   const t = useI18n();
   const setConversationTags = useAgentConversationsStore(
@@ -312,7 +337,10 @@ function ConversationTagSection({
   }, [t]);
 
   return (
-    <section className="space-y-2 border-t pt-2">
+    <>
+      <CustomerAutoTagsSection conversation={conversation} onProfileChanged={onProfileChanged} />
+      <Separator />
+      <section className="flex flex-col gap-2">
       <SectionHeading
         action={
           <ConversationTagPicker
@@ -325,7 +353,7 @@ function ConversationTagSection({
           />
         }
       >
-        {t("conversation.conversationTags")}
+        {t("conversation.customerTags.manual")}
       </SectionHeading>
       <ConversationTagBadges
         tags={conversation.tags}
@@ -334,7 +362,8 @@ function ConversationTagSection({
       {!conversation.tags || conversation.tags.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t("conversation.noConversationTags")}</p>
       ) : null}
-    </section>
+      </section>
+    </>
   );
 }
 
@@ -854,7 +883,7 @@ function CustomerLinkedBody({ conversation, customerId }: CustomerLinkedBodyProp
 
       <RelatedTicketsSection conversation={conversation} />
 
-      <ConversationTagSection conversation={conversation} />
+      <ConversationTagSection conversation={conversation} onProfileChanged={load} />
 
       <CustomerFormDialog
         open={customerEditOpen}

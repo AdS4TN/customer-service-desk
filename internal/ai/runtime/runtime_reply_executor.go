@@ -16,6 +16,7 @@ type runtimeReplyRunInput struct {
 	Conversation models.Conversation
 	Message      models.Message
 	AIAgent      models.AIAgent
+	OnStream     func(applicationruntime.StreamEvent)
 }
 
 type runtimeReplyResumeInput struct {
@@ -34,6 +35,7 @@ func (e *runtimeReplyExecutor) Run(ctx context.Context, input runtimeReplyRunInp
 		ConversationID: input.Conversation.ID,
 		MessageID:      input.Message.ID,
 		AIAgentID:      input.AIAgent.ID,
+		OnStream:       input.OnStream,
 	})
 	return summary, err
 }

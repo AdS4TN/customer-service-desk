@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BotIcon, SearchIcon, SparklesIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,9 +22,12 @@ import { getKnowledgeAnswerStatusLabel } from "@/lib/knowledge-i18n";
 
 type DebugPanelProps = {
   knowledgeBaseId: number | null;
+  defaultTopK?: number;
+  defaultScoreThreshold?: number;
+  defaultRerankLimit?: number;
 };
 
-export function DebugPanel({ knowledgeBaseId }: DebugPanelProps) {
+export function DebugPanel({ knowledgeBaseId, defaultTopK, defaultScoreThreshold, defaultRerankLimit }: DebugPanelProps) {
   const t = useI18n();
   const [question, setQuestion] = useState("");
   const [topK, setTopK] = useState("5");
@@ -34,6 +37,12 @@ export function DebugPanel({ knowledgeBaseId }: DebugPanelProps) {
   const [answering, setAnswering] = useState(false);
   const [searchResult, setSearchResult] = useState<KnowledgeSearchResponse | null>(null);
   const [answerResult, setAnswerResult] = useState<KnowledgeAnswerResponse | null>(null);
+
+  useEffect(() => {
+    if (defaultTopK !== undefined) setTopK(String(defaultTopK));
+    if (defaultScoreThreshold !== undefined) setScoreThreshold(String(defaultScoreThreshold));
+    if (defaultRerankLimit !== undefined) setRerankLimit(String(defaultRerankLimit));
+  }, [defaultRerankLimit, defaultScoreThreshold, defaultTopK]);
 
   async function handleSearch() {
     if (!knowledgeBaseId) {
@@ -50,9 +59,9 @@ export function DebugPanel({ knowledgeBaseId }: DebugPanelProps) {
       const data = await debugKnowledgeSearch({
         knowledgeBaseIds: [knowledgeBaseId],
         question: question.trim(),
-        topK: Number(topK) || undefined,
-        scoreThreshold: Number(scoreThreshold) || undefined,
-        rerankLimit: Number(rerankLimit) || undefined,
+        topK: parseOptionalNumber(topK),
+        scoreThreshold: parseOptionalNumber(scoreThreshold),
+        rerankLimit: parseOptionalNumber(rerankLimit),
       });
       setSearchResult(data);
       toast.success(t("knowledge.searchCompleted", { count: data.hitCount }));
@@ -78,9 +87,9 @@ export function DebugPanel({ knowledgeBaseId }: DebugPanelProps) {
       const data = await debugKnowledgeAnswer({
         knowledgeBaseIds: [knowledgeBaseId],
         question: question.trim(),
-        topK: Number(topK) || undefined,
-        scoreThreshold: Number(scoreThreshold) || undefined,
-        rerankLimit: Number(rerankLimit) || undefined,
+        topK: parseOptionalNumber(topK),
+        scoreThreshold: parseOptionalNumber(scoreThreshold),
+        rerankLimit: parseOptionalNumber(rerankLimit),
       });
       setAnswerResult(data);
       toast.success(t("knowledge.answerCompleted", {
@@ -199,9 +208,22 @@ export function DebugPanel({ knowledgeBaseId }: DebugPanelProps) {
                     <div className="mt-1 text-xs text-muted-foreground">
                       {item.sectionPath || item.title || `Chunk #${item.chunkNo}`}
                     </div>
-                    <div className="mt-2 text-xs leading-5 text-muted-foreground whitespace-pre-wrap">
-                      {item.content}
-                    </div>
+                    {item.matchedContent && item.matchedContent !== item.content ? (
+                      <div className="mt-2 flex flex-col gap-2">
+                        <div>
+                          <div className="mb-1 text-xs font-medium text-muted-foreground">{t("knowledge.matchedChildChunk")}</div>
+                          <div className="whitespace-pre-wrap text-xs leading-5">{item.matchedContent}</div>
+                        </div>
+                        <div>
+                          <div className="mb-1 text-xs font-medium text-muted-foreground">{t("knowledge.modelContextChunk")}</div>
+                          <div className="whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{item.content}</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-2 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
+                        {item.content}
+                      </div>
+                    )}
                   </div>
                 ))}
               </CardContent>
@@ -211,6 +233,12 @@ export function DebugPanel({ knowledgeBaseId }: DebugPanelProps) {
       </ScrollArea>
     </div>
   );
+}
+
+function parseOptionalNumber(value: string) {
+  if (!value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function getSearchResultLabel(item: {

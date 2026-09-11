@@ -4,6 +4,8 @@ import { create } from "zustand"
 
 import {
   fetchAgentConversations,
+  fetchAgentConversationDetail,
+  fetchInboxChannels,
   fetchAgentMessages,
   markAgentMessageRead,
   recallAgentMessage,
@@ -13,6 +15,7 @@ import {
   type AgentAsset,
   type AgentConversation,
   type AgentMessage,
+  type InboxChannel,
 } from "@/lib/api/agent"
 import type { RealtimeConnectionStatusValue } from "@/components/realtime-connection-status"
 import {
@@ -29,9 +32,16 @@ import {
 } from "@/lib/im-realtime-state"
 import { summarizeIMMessage } from "@/lib/im-message"
 import { generateUUID } from "@/lib/utils"
+import { translateCurrentMessage } from "@/i18n/messages"
 
 export const agentConversationFilterOptions = [
-  { value: "active", labelKey: "conversation.filterActive" },
+  { value: "all", labelKey: "conversation.inbox.all" },
+  { value: "unread", labelKey: "conversation.inbox.unread" },
+  { value: "mine", labelKey: "conversation.inbox.mine" },
+  { value: "needs_reply", labelKey: "reception.filterNeedsReply" },
+  { value: "overdue", labelKey: "reception.filterOverdue" },
+  { value: "waiting_customer", labelKey: "reception.filterWaiting" },
+  { value: "snoozed", labelKey: "reception.filterSnoozed" },
   { value: "pending", labelKey: "conversation.filterPending" },
   { value: "ai_serving", labelKey: "conversation.filterAiServing" },
   { value: "closed", labelKey: "conversation.filterClosed" },
@@ -40,11 +50,14 @@ export const agentConversationFilterOptions = [
 export type AgentConversationFilterKey =
   (typeof agentConversationFilterOptions)[number]["value"]
 
-function buildConversationQuery(filter: AgentConversationFilterKey, keyword: string) {
+export function buildConversationQuery(filter: AgentConversationFilterKey, keyword: string, channelType = "", channelId = "", page = 1) {
   const query: Record<string, string | number | undefined> = {
     filter,
     keyword: keyword.trim() || undefined,
-    limit: 100,
+    channelType: channelType || undefined,
+    channelId: channelId || undefined,
+    page,
+    limit: 50,
   }
 
   return query
@@ -60,6 +73,23 @@ function ensureArray<T>(value: T[] | null | undefined): T[] {
 }
 
 type AgentConversationsStore = {
+  channels: InboxChannel[]
+  channelsError: boolean
+  channelType: string
+  channelId: string
+  conversationsError: string
+  conversationsPage: number
+  conversationsTotal: number
+  selectedConversationData: AgentConversation | null
+  drafts: Record<number, string>
+  draftInsertion: { id: string; conversationId: number; text: string } | null
+  privateNoteDrafts: Record<number, { content: string; mentionIds: string[]; clientId: string }>
+  setPrivateNoteDraft: (id: number, draft: { content: string; mentionIds: string[]; clientId: string }) => void
+  insertSuggestion: (conversationId: number, lastMessageId: number, text: string) => boolean
+  consumeDraftInsertion: (id: string) => void
+  setDraft: (conversationId: number, html: string) => void
+  setChannelFilter: (channelType: string, channelId?: string) => void
+  loadChannels: () => Promise<void>
   searchKeyword: string
   conversationFilter: AgentConversationFilterKey
   conversations: AgentConversation[]
@@ -84,7 +114,7 @@ type AgentConversationsStore = {
     conversationId: number,
     tags: AgentConversation["tags"]
   ) => void
-  loadConversations: () => Promise<void>
+  loadConversations: (more?: boolean) => Promise<void>
   selectConversation: (conversationId: number) => Promise<void>
   loadMessages: (conversationId: number, options?: LoadMessagesOptions) => Promise<void>
   loadOlderMessages: () => Promise<void>
@@ -104,8 +134,38 @@ let conversationsRequestSeq = 0
 let messagesRequestSeq = 0
 
 export const useAgentConversationsStore = create<AgentConversationsStore>((set, get) => ({
+  channels: [],
+  channelsError: false,
+  channelType: "",
+  channelId: "",
+  conversationsError: "",
+  conversationsPage: 1,
+  conversationsTotal: 0,
+  selectedConversationData: null,
+  drafts: {},
+  draftInsertion: null,
+  privateNoteDrafts: {},
+  setPrivateNoteDraft: (id, draft) => set((state) => ({ privateNoteDrafts: { ...state.privateNoteDrafts, [id]: draft } })),
+  insertSuggestion: (conversationId, lastMessageId, text) => {
+    const state = get()
+    const conversation = state.conversations.find((item) => item.id === conversationId) ?? state.selectedConversationData
+    if (state.selectedConversationId !== conversationId || conversation?.id !== conversationId || conversation.lastMessageId !== lastMessageId || conversation.status !== 3 || state.sending || state.draftInsertion) return false
+    set({ draftInsertion: { id: generateUUID(), conversationId, text } })
+    return true
+  },
+  consumeDraftInsertion: (id) => { if (get().draftInsertion?.id === id) set({ draftInsertion: null }) },
+  setDraft: (id, html) => set((state) => ({ drafts: { ...state.drafts, [id]: html } })),
+  setChannelFilter: (channelType, channelId = "") => {
+    if (get().channelType === channelType && get().channelId === channelId) return
+    ++conversationsRequestSeq
+    set({ channelType, channelId, conversationsPage: 1, conversations: [], conversationsLoaded: false, selectedConversationId: null, selectedConversationData: null, messages: [], messagesLoadedConversationId: null, draftInsertion: null })
+  },
+  loadChannels: async () => {
+    try { set({ channels: ensureArray(await fetchInboxChannels()), channelsError: false }) }
+    catch { set({ channelsError: true }) }
+  },
   searchKeyword: "",
-  conversationFilter: "active",
+  conversationFilter: "all",
   conversations: [],
   conversationsLoading: false,
   conversationsLoaded: false,
@@ -123,11 +183,15 @@ export const useAgentConversationsStore = create<AgentConversationsStore>((set, 
   realtimeStatus: "connecting",
 
   setSearchKeyword: (keyword) => {
-    set({ searchKeyword: keyword })
+    if (get().searchKeyword === keyword) return
+    ++conversationsRequestSeq
+    set({ searchKeyword: keyword, conversationsPage: 1, conversations: [], conversationsLoaded: false, selectedConversationId: null, selectedConversationData: null, messages: [], messagesLoadedConversationId: null })
   },
 
   setConversationFilter: (filter) => {
-    set({ conversationFilter: filter })
+    if (get().conversationFilter === filter) return
+    ++conversationsRequestSeq
+    set({ conversationFilter: filter, conversationsPage: 1, conversations: [], conversationsLoaded: false, selectedConversationId: null, selectedConversationData: null, messages: [], messagesLoadedConversationId: null })
   },
 
   setRealtimeStatus: (status) => {
@@ -147,70 +211,55 @@ export const useAgentConversationsStore = create<AgentConversationsStore>((set, 
     }))
   },
 
-  loadConversations: async () => {
+  loadConversations: async (more = false) => {
     const requestSeq = ++conversationsRequestSeq
     const store = get()
 
-    if (!store.conversationsLoaded) {
-      set({ conversationsLoading: true })
-    }
+    const pageCount = store.conversationsPage + (more ? 1 : 0)
+    set({ conversationsLoading: true, conversationsError: "" })
 
     try {
-      const data = await fetchAgentConversations(
-        buildConversationQuery(store.conversationFilter, store.searchKeyword)
-      )
-      const conversations = ensureArray(data.results)
+      // Refresh the loaded window so new messages cannot shift offset pages into duplicates.
+      const pages = await Promise.all(Array.from({ length: pageCount }, (_, index) => fetchAgentConversations(
+        buildConversationQuery(store.conversationFilter, store.searchKeyword, store.channelType, store.channelId, index + 1)
+      )))
+      const conversations = [...new Map(pages.flatMap((data) => ensureArray(data.results)).map((item) => [item.id, item])).values()]
 
       if (requestSeq !== conversationsRequestSeq) {
         return
       }
 
       const currentSelectedId = get().selectedConversationId
-      const hasCurrentSelection =
-        currentSelectedId !== null && conversations.some((item) => item.id === currentSelectedId)
-      const nextSelectedId = hasCurrentSelection ? currentSelectedId : (conversations[0]?.id ?? null)
-      const selectionChanged = nextSelectedId !== currentSelectedId
-
       set({
         conversations,
+        conversationsPage: pageCount,
+        conversationsTotal: pages[0]?.page?.total ?? conversations.length,
         conversationsLoaded: true,
         conversationsLoading: false,
-        selectedConversationId: nextSelectedId,
       })
-
-      if (nextSelectedId === null) {
-        set({
-          messages: [],
-          messagesLoading: false,
-          messagesLoadingMore: false,
-          messagesCursor: "",
-          messagesHasMore: false,
-          messagesLoadedConversationId: null,
-        })
-        return
-      }
-
-      if (selectionChanged || get().messagesLoadedConversationId === null) {
-        await get().loadMessages(nextSelectedId, {
-          forceLoading: true,
-          reset: true,
-        })
+      if (currentSelectedId) {
+        const selected = conversations.find((item) => item.id === currentSelectedId) ?? await fetchAgentConversationDetail(currentSelectedId)
+        if (requestSeq === conversationsRequestSeq && get().selectedConversationId === currentSelectedId) {
+          set({ selectedConversationData: selected })
+        }
       }
     } catch (error) {
       if (requestSeq === conversationsRequestSeq) {
-        set({ conversationsLoading: false })
+        set({ conversationsLoading: false, conversationsError: error instanceof Error ? error.message : translateCurrentMessage("conversation.loadListFailed") })
       }
       throw error
     }
   },
 
   selectConversation: async (conversationId) => {
-    if (get().selectedConversationId === conversationId) {
+    if (get().selectedConversationId === conversationId && get().messagesLoadedConversationId === conversationId) {
       return
     }
 
     set({
       selectedConversationId: conversationId,
+      draftInsertion: null,
+      selectedConversationData: get().conversations.find((item) => item.id === conversationId) ?? null,
       messages: [],
       messagesLoading: true,
       messagesLoadingMore: false,
@@ -223,6 +272,10 @@ export const useAgentConversationsStore = create<AgentConversationsStore>((set, 
       forceLoading: true,
       reset: true,
     })
+    if (!get().selectedConversationData) {
+      const detail = await fetchAgentConversationDetail(conversationId)
+      if (get().selectedConversationId === conversationId) set({ selectedConversationData: detail })
+    }
   },
 
   loadMessages: async (conversationId, options = {}) => {
@@ -352,7 +405,7 @@ export const useAgentConversationsStore = create<AgentConversationsStore>((set, 
   markSelectedConversationRead: async () => {
     const store = get()
     const conversationId = store.selectedConversationId
-    const conversation = store.conversations.find((item) => item.id === conversationId)
+    const conversation = agentConversationSelectors.selectedConversation(store)
     const lastMessage = store.messages.at(-1)
     if (!conversationId || !conversation || !lastMessage) {
       return
@@ -376,6 +429,7 @@ export const useAgentConversationsStore = create<AgentConversationsStore>((set, 
         }
         return {
           readingMessageId: 0,
+          selectedConversationData: current.selectedConversationData ? { ...current.selectedConversationData, agentUnreadCount: 0, agentLastReadMessageId: lastMessage.id } : null,
           messages: current.messages.map((item) => {
             if (item.id > lastMessage.id) {
               return item
@@ -407,6 +461,7 @@ export const useAgentConversationsStore = create<AgentConversationsStore>((set, 
         : state.messages
       return {
         messages: nextMessages,
+        selectedConversationData: state.selectedConversationData ? patchConversationListWithMessage([state.selectedConversationData], message)[0] : null,
         conversations: patchConversationListWithMessage(
           state.conversations,
           message
@@ -442,6 +497,7 @@ export const useAgentConversationsStore = create<AgentConversationsStore>((set, 
       }
       return {
         messages: nextMessages,
+        selectedConversationData: state.selectedConversationData ? patchConversationList([state.selectedConversationData], patch)[0] : null,
         conversations: patchConversationList(state.conversations, patch),
       }
     })
@@ -463,10 +519,7 @@ export const useAgentConversationsStore = create<AgentConversationsStore>((set, 
     const selectedConversationId = get().selectedConversationId
     const targetConversationId = conversationId ?? selectedConversationId
     if (targetConversationId && selectedConversationId === targetConversationId) {
-      await get().loadMessages(targetConversationId, {
-        forceLoading: false,
-        reset: false,
-      })
+      await get().syncLatestMessages(targetConversationId)
     }
   },
 
@@ -536,7 +589,7 @@ export const useAgentConversationsStore = create<AgentConversationsStore>((set, 
       const asset = await uploadAgentConversationAttachment(selectedConversationId, file)
       const message = await sendAgentMessage({
         conversationId: selectedConversationId,
-        messageType: "attachment",
+        messageType: /^(image\/jpeg|image\/png)$/.test(asset.mimeType) ? "image" : "attachment",
         content: asset.filename,
         payload: JSON.stringify({ assetId: asset.assetId }),
         clientMsgId: `agent_attachment_${generateUUID()}`,
@@ -614,5 +667,5 @@ export const useAgentConversationsStore = create<AgentConversationsStore>((set, 
 
 export const agentConversationSelectors = {
   selectedConversation: (state: AgentConversationsStore) =>
-    state.conversations.find((item) => item.id === state.selectedConversationId) ?? null,
+    state.conversations.find((item) => item.id === state.selectedConversationId) ?? state.selectedConversationData,
 }

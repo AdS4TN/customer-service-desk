@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import {
   HistoryIcon,
+  ClipboardListIcon,
   MessageSquareTextIcon,
   PlugIcon,
   SaveIcon,
@@ -13,6 +14,9 @@ import {
 import { toast } from "sonner"
 
 import { ContentEditor } from "@/components/content-editor"
+import { ReceptionPolicyEditor } from "./reception-policy"
+import { emptyReceptionPolicy, receptionPolicyError, type ReceptionPolicy } from "@/lib/reception"
+import { ImageInput } from "@/components/image-input"
 import { OptionCombobox } from "@/components/option-combobox"
 import { ProjectDialog } from "@/components/project-dialog"
 import { Badge } from "@/components/ui/badge"
@@ -62,7 +66,7 @@ import {
 } from "@/lib/generated/enums"
 import { cn } from "@/lib/utils"
 
-type SectionKey = "setup" | "persona" | "capability" | "service"
+type SectionKey = "setup" | "persona" | "reception" | "capability" | "service"
 type MCPToolItem = CreateAIAgentPayload["mcpTools"][number]
 
 type MCPToolOption = {
@@ -105,22 +109,38 @@ export function AIAgentConfigWorkbench({
   onAgentSaved,
   onAgentCreated,
   onCancel,
+  onPolicyStateChange,
 }: {
   agentId?: number | null
   onAgentSaved?: () => void
   onAgentCreated?: (agent: AIAgent) => void
   onCancel?: () => void
+  onPolicyStateChange?: (state: { dirty: boolean; saving: boolean }) => void
 }) {
   const t = useI18n()
+  const [receptionPolicy, setReceptionPolicy] = useState<ReceptionPolicy>(emptyReceptionPolicy)
+  const [policyBaseline, setPolicyBaseline] = useState(JSON.stringify(emptyReceptionPolicy()))
+  const [policyError, setPolicyError] = useState("")
+  const policyDirty = JSON.stringify(receptionPolicy) !== policyBaseline
+  useEffect(() => {
+    if (!policyDirty) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }
+    window.addEventListener("beforeunload", warn)
+    return () => window.removeEventListener("beforeunload", warn)
+  }, [policyDirty])
   const [currentAgentId, setCurrentAgentId] = useState(agentId ?? null)
   const [activeSection, setActiveSection] = useState<SectionKey>("setup")
   const [agent, setAgent] = useState<AIAgent | null>(null)
   const [agentRevisions, setAgentRevisions] = useState<AgentRevision[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  useEffect(() => { onPolicyStateChange?.({ dirty: policyDirty, saving }) }, [onPolicyStateChange, policyDirty, saving])
   const [versionDialogOpen, setVersionDialogOpen] = useState(false)
 
   const [name, setName] = useState("")
+  const [displayName, setDisplayName] = useState("")
+  const [avatar, setAvatar] = useState("")
+  const [statusText, setStatusText] = useState("")
   const [description, setDescription] = useState("")
   const [aiConfigId, setAIConfigId] = useState("")
   const [serviceMode, setServiceMode] = useState(String(IMConversationServiceMode.AIFirst))
@@ -182,10 +202,16 @@ export function AIAgentConfigWorkbench({
         setAgent(null)
         setAgentRevisions([])
         setName("")
+        setDisplayName("")
+        setAvatar("")
+        setStatusText("")
         setDescription("")
         setAIConfigId(configs && configs.length > 0 ? String(configs[0].id) : "")
         setServiceMode(String(IMConversationServiceMode.AIFirst))
         setSystemPrompt("")
+        setReceptionPolicy(emptyReceptionPolicy())
+        setPolicyBaseline(JSON.stringify(emptyReceptionPolicy()))
+        setPolicyError("")
         setWelcomeMessage("")
         setReplyTimeoutSeconds("180")
         setHandoffMode(String(AIAgentHandoffMode.WaitPool))
@@ -206,10 +232,16 @@ export function AIAgentConfigWorkbench({
       setAgent(detail)
       setAgentRevisions(revisions ?? [])
       setName(detail.name)
+      setDisplayName(detail.displayName || "")
+      setAvatar(detail.avatar || "")
+      setStatusText(detail.statusText || "")
       setDescription(detail.description || "")
       setAIConfigId(toText(detail.aiConfigId))
       setServiceMode(String(detail.serviceMode || IMConversationServiceMode.AIFirst))
       setSystemPrompt(detail.systemPrompt || "")
+      setReceptionPolicy(detail.receptionPolicy ?? emptyReceptionPolicy())
+      setPolicyBaseline(JSON.stringify(detail.receptionPolicy ?? emptyReceptionPolicy()))
+      setPolicyError("")
       setWelcomeMessage(detail.welcomeMessage || "")
       setReplyTimeoutSeconds(String(detail.replyTimeoutSeconds ?? 180))
       setHandoffMode(String(detail.handoffMode || AIAgentHandoffMode.WaitPool))
@@ -388,6 +420,13 @@ export function AIAgentConfigWorkbench({
   }
 
   function validateForm() {
+    const error = receptionPolicyError(receptionPolicy)
+    setPolicyError(error)
+    if (error) {
+      setActiveSection("reception")
+      toast.error(t(`reception.${error}`))
+      return false
+    }
     if (!name.trim()) {
       setActiveSection("setup")
       toast.error(t("aiAgent.nameRequired"))
@@ -404,10 +443,14 @@ export function AIAgentConfigWorkbench({
   function buildPayload(): CreateAIAgentPayload {
     return {
       name: name.trim(),
+      displayName: displayName.trim(),
+      avatar: avatar.trim(),
+      statusText: statusText.trim(),
       description: description.trim(),
       aiConfigId: Number(aiConfigId),
       serviceMode: Number(serviceMode),
       systemPrompt: systemPrompt.trim(),
+      receptionPolicy,
       welcomeMessage: welcomeMessage.trim(),
       replyTimeoutSeconds: Number(replyTimeoutSeconds),
       rolloutPercent: agent?.rolloutPercent || 100,
@@ -442,6 +485,7 @@ export function AIAgentConfigWorkbench({
         onAgentCreated?.(created)
       }
       onAgentSaved?.()
+      setPolicyBaseline(JSON.stringify(receptionPolicy))
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("aiAgent.saveFailed"))
     } finally {
@@ -458,6 +502,7 @@ export function AIAgentConfigWorkbench({
       await updateAIAgent({ id: agent.id, ...payload })
       await publishAIAgent(agent.id)
       await refreshAgentPublicationState(agent.id)
+      setPolicyBaseline(JSON.stringify(receptionPolicy))
       toast.success(t("aiAgent.publishedSuccess"))
       onAgentSaved?.()
     } catch (error) {
@@ -491,6 +536,7 @@ export function AIAgentConfigWorkbench({
   }[] = [
     { key: "setup", title: t("aiAgent.sectionSetup"), icon: <SettingsIcon /> },
     { key: "persona", title: t("aiAgent.sectionPersona"), icon: <MessageSquareTextIcon /> },
+    { key: "reception", title: t("reception.title"), icon: <ClipboardListIcon /> },
     { key: "capability", title: t("aiAgent.sectionCapability"), icon: <PlugIcon /> },
     { key: "service", title: t("aiAgent.sectionService"), icon: <UserRoundCheckIcon /> },
   ]
@@ -505,8 +551,8 @@ export function AIAgentConfigWorkbench({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b px-5">
-        <div className="flex min-w-0 items-center gap-3">
+      <header className="flex min-h-16 shrink-0 items-center justify-between gap-4 border-b px-5 py-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
           {/* <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/5 text-primary">
             <BotMessageSquareIcon className="size-5" />
           </div> */}
@@ -525,6 +571,17 @@ export function AIAgentConfigWorkbench({
           ) : null}
         </div>
       </header>
+      <nav className="shrink-0 border-b px-5 py-3 md:hidden" aria-label={t("aiAgent.columnAiConfig")}>
+        <OptionCombobox
+          value={activeSection}
+          options={sections.map((section) => ({ value: section.key, label: section.title }))}
+          placeholder={t("aiAgent.columnAiConfig")}
+          onChange={(value) => {
+            const section = sections.find((item) => item.key === value)
+            if (section) setActiveSection(section.key)
+          }}
+        />
+      </nav>
       <div className="flex min-h-0 flex-1">
         <aside className="hidden w-64 shrink-0 flex-col border-r bg-muted/20 p-4 md:flex">
           <div className="px-3 pb-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
@@ -597,6 +654,45 @@ export function AIAgentConfigWorkbench({
                 </FormSection>
 
                 <FormSection
+                  title={t("aiAgent.publicIdentity")}
+                  description={t("aiAgent.publicIdentityDescription")}
+                >
+                  <div className="grid gap-6 md:grid-cols-[7rem_minmax(0,1fr)]">
+                    <FieldBlock label={t("aiAgent.avatar")}>
+                      <ImageInput
+                        value={avatar}
+                        onChange={setAvatar}
+                        prefix="agent-avatars"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="size-24 rounded-full"
+                        placeholder={t("aiAgent.uploadAvatar")}
+                      />
+                    </FieldBlock>
+                    <div className="grid gap-5 md:grid-cols-2">
+                      <FieldBlock label={t("aiAgent.displayName")}>
+                        <Input
+                          value={displayName}
+                          maxLength={100}
+                          placeholder={name || t("aiAgent.displayNamePlaceholder")}
+                          onChange={(event) => setDisplayName(event.target.value)}
+                        />
+                      </FieldBlock>
+                      <FieldBlock label={t("aiAgent.statusText")}>
+                        <Input
+                          value={statusText}
+                          maxLength={100}
+                          placeholder={t("aiAgent.statusTextPlaceholder")}
+                          onChange={(event) => setStatusText(event.target.value)}
+                        />
+                      </FieldBlock>
+                      <p className="text-xs leading-5 text-muted-foreground md:col-span-2">
+                        {t("aiAgent.publicIdentityPublishHint")}
+                      </p>
+                    </div>
+                  </div>
+                </FormSection>
+
+                <FormSection
                   title={t("aiAgent.sectionModel")}
                   description={t("aiAgent.modelDescription")}
                 >
@@ -630,6 +726,8 @@ export function AIAgentConfigWorkbench({
                 </FormSection>
               </div>
             ) : null}
+
+            {activeSection === "reception" && <ReceptionPolicyEditor value={receptionPolicy} disabled={saving} error={policyError} onChange={(value) => { setReceptionPolicy(value); setPolicyError("") }} />}
 
             {activeSection === "persona" ? (
               <div className="space-y-10">
@@ -897,7 +995,7 @@ export function AIAgentConfigWorkbench({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" onClick={onCancel}>
+          <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>
             {t("common.cancel")}
           </Button>
           <Button

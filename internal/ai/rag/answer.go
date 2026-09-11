@@ -46,6 +46,7 @@ func (s *answer) DebugSearch(ctx context.Context, req request.KnowledgeSearchReq
 			Title:           item.Title,
 			SectionPath:     item.SectionPath,
 			Content:         item.Content,
+			MatchedContent:  item.MatchedContent,
 			Score:           float64(item.Score),
 		})
 	}
@@ -97,6 +98,7 @@ func (s *answer) DebugAnswer(ctx context.Context, req request.KnowledgeAnswerReq
 			Title:           item.Title,
 			SectionPath:     item.SectionPath,
 			Content:         item.Content,
+			MatchedContent:  item.MatchedContent,
 			Score:           score,
 		})
 	}
@@ -223,6 +225,7 @@ func buildContextHits(results []RetrieveResult) []response.KnowledgeSearchResult
 			Title:           item.Title,
 			SectionPath:     item.SectionPath,
 			Content:         item.Content,
+			MatchedContent:  item.MatchedContent,
 			Score:           float64(item.Score),
 		})
 	}

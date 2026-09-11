@@ -35,7 +35,26 @@ export function mergeImMessagesByIdAsc<T extends MergeableImMessage>(
     const existing = byId.get(message.id)
     byId.set(message.id, existing ? mergeImMessage(existing, message) : message)
   }
-  return Array.from(byId.values()).sort((x, y) => x.id - y.id)
+  const values = Array.from(byId.values())
+  return values.sort(messageComparator(values))
+}
+
+type MessagePosition = { id: number; clientMsgId?: string; sentAt?: string }
+
+function isLinkedChannelMessage(message: MessagePosition) {
+  return message.clientMsgId?.startsWith("wa_") || message.clientMsgId?.startsWith("ms_")
+}
+
+function messageComparator(messages: MessagePosition[]) {
+  const chronological = messages.some(isLinkedChannelMessage)
+  return (a: MessagePosition, b: MessagePosition) => {
+    if (chronological) {
+      const first = Date.parse(a.sentAt ?? "")
+      const second = Date.parse(b.sentAt ?? "")
+      if (Number.isFinite(first) && Number.isFinite(second) && first !== second) return first - second
+    }
+    return a.id - b.id
+  }
 }
 
 export function parseImMessageCursorId(cursor: string): number {
@@ -43,23 +62,28 @@ export function parseImMessageCursorId(cursor: string): number {
   return Number.isFinite(value) && value > 0 ? value : 0
 }
 
-export function cursorFromLoadedImMessages<T extends Pick<MergeableImMessage, "id">>(
+export function cursorFromLoadedImMessages<T extends MessagePosition>(
   messages: T[]
 ): string {
   if (messages.length === 0) {
     return ""
   }
-  return String(Math.min(...messages.map((message) => message.id)))
+  const compare = messageComparator(messages)
+  return String(messages.reduce((first, message) => compare(message, first) < 0 ? message : first).id)
 }
 
 export function hasMoreAfterLatestImMessageMerge<
-  T extends Pick<MergeableImMessage, "id">,
+  T extends MessagePosition,
 >(args: {
   previousMessages: T[]
   previousHasMore: boolean
   merged: T[]
   apiHasMore: boolean
 }): boolean {
+  // A history batch can arrive after we previously reached the oldest record.
+  if (args.merged.some(isLinkedChannelMessage)) {
+    return args.previousHasMore || Boolean(args.apiHasMore)
+  }
   const prevMin = minImMessageId(args.previousMessages)
   const mergedMin = minImMessageId(args.merged)
 

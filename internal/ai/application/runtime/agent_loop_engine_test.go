@@ -45,7 +45,7 @@ func TestAgentLoopActivatesSkillInsideSameToolLoop(t *testing.T) {
 	}
 }
 
-func TestAgentLoopRegistersDirectCapabilityAliases(t *testing.T) {
+func TestAgentLoopRegistersOnlyToolSearch(t *testing.T) {
 	turn := agentLoopTurn{AllowedTools: []string{
 		"builtin/conversation_context",
 		"graph/triage_service_request",
@@ -53,19 +53,8 @@ func TestAgentLoopRegistersDirectCapabilityAliases(t *testing.T) {
 		"workflow/47",
 	}}
 	definitions := agentLoopToolDefinitions(turn)
-	names := make(map[string]bool, len(definitions))
-	for _, definition := range definitions {
-		names[definition.Name] = true
-	}
-	for _, expected := range []string{
-		"tool_search",
-		"builtin/conversation_context",
-		"graph/triage_service_request",
-		"workflow/47",
-	} {
-		if !names[expected] {
-			t.Fatalf("missing registered function alias %q: %#v", expected, definitions)
-		}
+	if len(definitions) != 1 || definitions[0].Name != "tool_search" {
+		t.Fatalf("expected only tool_search to be registered: %#v", definitions)
 	}
 }
 
@@ -295,6 +284,20 @@ func TestAgentLoopPromptAvoidsRepeatingWelcomeMessage(t *testing.T) {
 	prompt := buildAgentLoopSystemPrompt(models.AIAgent{}, false, "", nil)
 	if !strings.Contains(prompt, "without repeating the welcome wording") {
 		t.Fatalf("conversation continuity instruction missing: %q", prompt)
+	}
+}
+
+func TestAgentLoopPromptEnforcesOfficialFirstPersonIdentity(t *testing.T) {
+	prompt := buildAgentLoopSystemPrompt(models.AIAgent{SystemPrompt: "Keep answers concise."}, true, "product facts", nil)
+	for _, required := range []string{
+		"official AI customer service representative",
+		"use first-person language",
+		"Treat Knowledge evidence as internal company knowledge",
+		"never mention documents, materials, retrieved context, a knowledge base, a website, search results",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("identity instruction %q missing from prompt: %q", required, prompt)
+		}
 	}
 }
 

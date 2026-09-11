@@ -81,12 +81,23 @@ func ConversationAnyConversations(ctx *gin.Context) {
 	filterValue, _ := params.Get(ctx, "filter")
 	keyword, _ := params.Get(ctx, "keyword")
 	paging := params.GetPaging(ctx)
+	channelID := int64(0)
+	if raw, _ := params.Get(ctx, "channelId"); strings.TrimSpace(raw) != "" {
+		value, parseErr := cast.ToInt64E(raw)
+		if parseErr != nil || value <= 0 {
+			httpx.JsonErrorMsg(ctx, "error.e0121")
+			return
+		}
+		channelID = value
+	}
+	channelType, _ := params.Get(ctx, "channelType")
 
 	list, paging, err := services.ConversationService.ListConversations(
 		operator.UserID,
 		request.AgentConversationFilter(strings.TrimSpace(filterValue)),
 		keyword,
 		paging,
+		request.InboxFilter{ChannelType: strings.TrimSpace(channelType), ChannelID: channelID},
 	)
 	if err != nil {
 		httpx.WriteJSON(ctx, err)
@@ -98,6 +109,14 @@ func ConversationAnyConversations(ctx *gin.Context) {
 		results = append(results, builders.BuildConversationWithLocale(&item, i18nx.Locale(ctx)))
 	}
 	httpx.WriteJSON(ctx, &web.PageResult{Results: results, Page: paging})
+}
+
+func ConversationGetChannels(ctx *gin.Context) {
+	if _, err := services.AuthService.RequirePermission(ctx, constants.PermissionConversationView); err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	httpx.WriteJSON(ctx, services.ConversationService.InboxChannels())
 }
 
 func ConversationGetBy(ctx *gin.Context) {
@@ -276,6 +295,27 @@ func ConversationPostRecall_message(ctx *gin.Context) {
 		return
 	}
 	item, err := services.MessageService.RecallAgentMessage(req.MessageID, operator)
+	if err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	httpx.WriteJSON(ctx, builders.BuildMessageWithLocale(item, i18nx.Locale(ctx)))
+}
+
+func ConversationPostRetry_message(ctx *gin.Context) {
+	operator, err := services.AuthService.RequirePermission(ctx, constants.PermissionConversationSend)
+	if err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	var req struct {
+		MessageID int64 `json:"messageId" binding:"required,gt=0"`
+	}
+	if err := params.ReadJSON(ctx, &req); err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	item, err := services.ConversationService.RetryInboxMessage(req.MessageID, operator)
 	if err != nil {
 		httpx.WriteJSON(ctx, err)
 		return

@@ -67,6 +67,9 @@ type agentRevisionModel struct {
 
 type agentRevisionAgent struct {
 	Name                string `json:"name"`
+	DisplayName         string `json:"displayName"`
+	Avatar              string `json:"avatar"`
+	StatusText          string `json:"statusText"`
 	Description         string `json:"description"`
 	AIConfigID          int64  `json:"aiConfigId"`
 	MaxSteps            int    `json:"maxSteps"`
@@ -75,6 +78,7 @@ type agentRevisionAgent struct {
 	KnowledgePolicy     string `json:"knowledgePolicy"`
 	ServiceMode         int    `json:"serviceMode"`
 	SystemPrompt        string `json:"systemPrompt"`
+	ReceptionPolicy     string `json:"receptionPolicy"`
 	WelcomeMessage      string `json:"welcomeMessage"`
 	ReplyTimeoutSeconds int    `json:"replyTimeoutSeconds"`
 	TeamIDs             string `json:"teamIds"`
@@ -94,6 +98,25 @@ type AgentRevisionSnapshot struct {
 	Agent            models.AIAgent
 	AIConfig         models.AIConfig
 	WorkflowBindings []AgentRevisionWorkflowBinding
+}
+
+// ResolvePublishedAgent restores the published public Agent fields. It falls
+// back to the current Agent so public surfaces remain available when a legacy
+// revision is missing or malformed.
+func (s *agentRevisionService) ResolvePublishedAgent(agent models.AIAgent) models.AIAgent {
+	if agent.PublishedRevisionID <= 0 {
+		return agent
+	}
+	revision := repositories.AgentRevisionRepository.Get(sqls.DB(), agent.PublishedRevisionID)
+	if revision == nil || revision.AgentID != agent.ID || revision.Status != enums.StatusOk || strings.TrimSpace(revision.Definition) == "" {
+		return agent
+	}
+	definition := agentRevisionDefinition{}
+	if err := json.Unmarshal([]byte(revision.Definition), &definition); err != nil {
+		return agent
+	}
+	applyRevisionAgentSnapshot(&agent, definition.Agent)
+	return agent
 }
 
 // ResolvePublishedSnapshot restores an immutable published Agent revision.
@@ -135,6 +158,9 @@ func applyRevisionAgentSnapshot(agent *models.AIAgent, definition agentRevisionA
 		return
 	}
 	agent.Name = definition.Name
+	agent.DisplayName = definition.DisplayName
+	agent.Avatar = definition.Avatar
+	agent.StatusText = definition.StatusText
 	agent.Description = definition.Description
 	agent.AIConfigID = definition.AIConfigID
 	agent.MaxSteps = definition.MaxSteps
@@ -143,6 +169,7 @@ func applyRevisionAgentSnapshot(agent *models.AIAgent, definition agentRevisionA
 	agent.KnowledgePolicy = definition.KnowledgePolicy
 	agent.ServiceMode = enums.IMConversationServiceMode(definition.ServiceMode)
 	agent.SystemPrompt = definition.SystemPrompt
+	agent.ReceptionPolicy = definition.ReceptionPolicy
 	agent.WelcomeMessage = definition.WelcomeMessage
 	agent.ReplyTimeoutSeconds = definition.ReplyTimeoutSeconds
 	agent.TeamIDs = definition.TeamIDs
@@ -183,10 +210,12 @@ func (s *agentRevisionService) publishSnapshot(db *gorm.DB, agent *models.AIAgen
 	}
 	definition := agentRevisionDefinition{
 		Agent: agentRevisionAgent{
-			Name: agent.Name, Description: agent.Description, AIConfigID: agent.AIConfigID,
+			Name: agent.Name, DisplayName: agent.DisplayName, Avatar: agent.Avatar, StatusText: agent.StatusText,
+			Description: agent.Description, AIConfigID: agent.AIConfigID,
 			MaxSteps: agent.MaxSteps, ContextWindow: agent.ContextWindow,
 			ToolPolicy: agent.ToolPolicy, KnowledgePolicy: agent.KnowledgePolicy, ServiceMode: int(agent.ServiceMode), SystemPrompt: agent.SystemPrompt,
-			WelcomeMessage: agent.WelcomeMessage, ReplyTimeoutSeconds: agent.ReplyTimeoutSeconds, TeamIDs: agent.TeamIDs, HandoffMode: int(agent.HandoffMode),
+			ReceptionPolicy: agent.ReceptionPolicy,
+			WelcomeMessage:  agent.WelcomeMessage, ReplyTimeoutSeconds: agent.ReplyTimeoutSeconds, TeamIDs: agent.TeamIDs, HandoffMode: int(agent.HandoffMode),
 			FallbackMode: int(agent.FallbackMode), FallbackMessage: agent.FallbackMessage, KnowledgeIDs: agent.KnowledgeIDs,
 			SkillIDs: agent.SkillIDs, AllowedMCPTools: agent.AllowedMCPTools,
 		},

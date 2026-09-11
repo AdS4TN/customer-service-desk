@@ -8,6 +8,11 @@ import (
 	"agent-desk/internal/models"
 	"agent-desk/internal/pkg/enums"
 	"agent-desk/internal/pkg/i18nx"
+
+	"github.com/glebarez/sqlite"
+	"github.com/mlogclub/simple/sqls"
+	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
 func TestLocalizeConversationSummary(t *testing.T) {
@@ -132,5 +137,40 @@ func TestBuildMessageJSONDoesNotExposeSeqNo(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "seqNo") {
 		t.Fatalf("message response should not expose seqNo, got %s", raw)
+	}
+}
+
+func TestBuildAIMessageUsesPublishedPublicIdentity(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{
+		NamingStrategy: schema.NamingStrategy{TablePrefix: "t_", SingularTable: true},
+	})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&models.AIAgent{}, &models.AgentRevision{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+	sqls.SetDB(db)
+	agent := &models.AIAgent{Name: "draft", DisplayName: "Draft name", Avatar: "/draft.png", Status: enums.StatusOk}
+	if err := db.Create(agent).Error; err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	revision := &models.AgentRevision{
+		AgentID: agent.ID, Revision: 1, Status: enums.StatusOk,
+		Definition: `{"agent":{"name":"published","displayName":"Published Support","avatar":"/published.png","statusText":"Online"}}`,
+	}
+	if err := db.Create(revision).Error; err != nil {
+		t.Fatalf("create revision: %v", err)
+	}
+	if err := db.Model(agent).Update("published_revision_id", revision.ID).Error; err != nil {
+		t.Fatalf("publish agent: %v", err)
+	}
+
+	resp := buildMessageWithReadStatesAndLocale(&models.Message{
+		ID: 1, ConversationID: 2, SenderType: enums.IMSenderTypeAI, SenderID: agent.ID,
+		MessageType: enums.IMMessageTypeText, Content: "Hello",
+	}, nil, nil, nil, nil, nil, nil, i18nx.DefaultLocale)
+	if resp.SenderName != "Published Support" || resp.SenderAvatar != "/published.png" {
+		t.Fatalf("message identity = name %q avatar %q", resp.SenderName, resp.SenderAvatar)
 	}
 }

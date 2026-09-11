@@ -6,6 +6,7 @@ import (
 	"agent-desk/internal/pkg/config"
 	"agent-desk/internal/pkg/i18nx"
 	"agent-desk/internal/pkg/logx"
+	"agent-desk/internal/services"
 	"agent-desk/internal/services/cronx"
 	"agent-desk/internal/wxwork"
 	"context"
@@ -41,6 +42,9 @@ func Init(configPath string) error {
 		slog.Error("init vector db failed", "error", err)
 		return err
 	}
+	services.KnowledgeIngestionService.Start(context.Background())
+	services.WhatsAppService.Start()
+	services.MessengerService.Start()
 
 	// 启动任务调度器
 	cronx.Init()

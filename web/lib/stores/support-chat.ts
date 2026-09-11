@@ -45,6 +45,11 @@ import { translateCurrentMessage } from "@/i18n/messages"
 
 type ChatStatus = "connecting" | "connected" | "disconnected"
 
+export type StreamingReply = {
+  requestId: string
+  content: string
+}
+
 const DEFAULT_PAGE_LIMIT = 50
 
 function getNotificationBody(message: ImMessage): string {
@@ -83,6 +88,22 @@ function ensureMessageList(value: ImMessage[] | null | undefined): ImMessage[] {
   return Array.isArray(value) ? value : []
 }
 
+function resolveWidgetAssetUrl(value: string | undefined): string {
+  const assetUrl = value?.trim()
+  if (!assetUrl || typeof window === "undefined") {
+    return assetUrl || ""
+  }
+  try {
+    const runtime = readSupportChatRuntimeConfig()
+    return new URL(
+      assetUrl,
+      runtime.apiBaseUrl || runtime.baseUrl || window.location.origin
+    ).toString()
+  } catch {
+    return assetUrl
+  }
+}
+
 function markConversationReadMessages(
   messages: ImMessage[],
   payload: ImRealtimeEnvelope["data"] | ImRealtimeEnvelope["payload"]
@@ -110,12 +131,14 @@ function markConversationReadMessages(
 export type SupportChatStore = {
   title: string
   subtitle: string
+  agentAvatar: string
   themeColor: string
   conversation: ImConversation | null
   messages: ImMessage[]
   messagesCursor: string
   messagesHasMore: boolean
   messagesLoadingMore: boolean
+  streamingReply: StreamingReply | null
   initialized: boolean
   status: ChatStatus
   error: string
@@ -155,7 +178,7 @@ export const useSupportChatStore = create<SupportChatStore>((set, get) => {
     canReconnect: () => Boolean(get().isOpen && get().conversation?.id),
     onStatusChange: (status) => {
       if (get().isOpen || status === "disconnected") {
-        set({ status })
+        set({ status, ...(status === "disconnected" ? { streamingReply: null } : {}) })
       }
     },
     onSocketChange: (socket) => {
@@ -188,6 +211,44 @@ export const useSupportChatStore = create<SupportChatStore>((set, get) => {
         return
       }
 
+      if (event.type === "message.stream.started") {
+        if (!payload?.requestId) {
+          return
+        }
+        set({ streamingReply: { requestId: payload.requestId, content: "" } })
+        return
+      }
+
+      if (event.type === "message.stream.delta") {
+        const requestId = payload?.requestId
+        if (!requestId) {
+          return
+        }
+        set((state) => ({
+          streamingReply:
+            state.streamingReply?.requestId === requestId
+              ? { requestId, content: payload.content ?? "" }
+              : state.streamingReply,
+        }))
+        return
+      }
+
+      if (
+        event.type === "message.stream.completed" ||
+        event.type === "message.stream.failed"
+      ) {
+        if (!payload?.requestId) {
+          return
+        }
+        set((state) => ({
+          streamingReply:
+            state.streamingReply?.requestId === payload.requestId
+              ? null
+              : state.streamingReply,
+        }))
+        return
+      }
+
       if (event.type === "message.created") {
         const message = normalizeRealtimeMessage<ImMessage>(payload)
         if (!message) {
@@ -197,6 +258,10 @@ export const useSupportChatStore = create<SupportChatStore>((set, get) => {
         set((state) => ({
           messages: mergeImMessagesByIdAsc(state.messages, [message]),
           conversation: patchConversationWithMessage(state.conversation, message),
+          streamingReply:
+            message.requestId && state.streamingReply?.requestId === message.requestId
+              ? null
+              : state.streamingReply,
         }))
         if (
           message.senderType !== "customer" &&
@@ -238,12 +303,14 @@ export const useSupportChatStore = create<SupportChatStore>((set, get) => {
   return {
     title: t("supportChat.title"),
     subtitle: "",
+    agentAvatar: "",
     themeColor: "#2563eb",
     conversation: null,
     messages: [],
     messagesCursor: "",
     messagesHasMore: false,
     messagesLoadingMore: false,
+    streamingReply: null,
     initialized: false,
     status: "connecting",
     error: "",
@@ -293,8 +360,9 @@ export const useSupportChatStore = create<SupportChatStore>((set, get) => {
           }
 
           set({
-            title: widgetConfig.title || t("supportChat.title"),
-            subtitle: widgetConfig.subtitle || "",
+            title: widgetConfig.agentName || widgetConfig.title || t("supportChat.title"),
+            subtitle: widgetConfig.agentStatus || widgetConfig.subtitle || t("supportChat.online"),
+            agentAvatar: resolveWidgetAssetUrl(widgetConfig.agentAvatar),
             themeColor: widgetConfig.themeColor || "#2563eb",
           })
 

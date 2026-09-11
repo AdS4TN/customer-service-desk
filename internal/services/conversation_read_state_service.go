@@ -264,7 +264,7 @@ func (s *conversationReadStateService) CountUnreadMessages(ctx *sqls.TxContext, 
 	}
 	var count int64
 	query := ctx.Tx.Model(&models.Message{}).
-		Where("conversation_id = ? AND id > ? AND recalled_at IS NULL AND send_status <> ?", conversationID, lastReadMessageID, int(enums.IMMessageStatusRecalled))
+		Where("conversation_id = ? AND id > ? AND recalled_at IS NULL AND send_status <> ? AND is_historical = ?", conversationID, lastReadMessageID, int(enums.IMMessageStatusRecalled), false)
 	if len(normalizedSenderTypes) == 1 {
 		query = query.Where("sender_type = ?", normalizedSenderTypes[0])
 	} else {

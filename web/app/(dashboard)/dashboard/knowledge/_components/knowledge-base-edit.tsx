@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import {
   Field,
   FieldContent,
+  FieldDescription,
   FieldError,
   FieldLabel,
 } from "@/components/ui/field";
@@ -47,6 +48,8 @@ const emptyForm: EditForm = {
   chunkTargetTokens: "300",
   chunkMaxTokens: "400",
   chunkOverlapTokens: "40",
+  parentChunkTokens: "900",
+  childChunkTokens: "200",
   answerMode: String(KnowledgeAnswerMode.Strict),
   remark: "",
 };
@@ -65,6 +68,8 @@ function createKnowledgeBaseFormSchema(t: TFunction) {
   chunkTargetTokens: z.string().trim().min(1, t("knowledge.targetTokensRequired")),
   chunkMaxTokens: z.string().trim().min(1, t("knowledge.maxTokensRequired")),
   chunkOverlapTokens: z.string().trim().min(1, t("knowledge.overlapTokensRequired")),
+  parentChunkTokens: z.string().trim().min(1, t("knowledge.parentTokensRequired")),
+  childChunkTokens: z.string().trim().min(1, t("knowledge.childTokensRequired")),
   answerMode: z.string().trim().min(1, t("knowledge.answerModeRequired")),
   remark: z.string().trim().max(500, t("knowledge.remarkMax")),
   });
@@ -81,6 +86,8 @@ type EditForm = {
   chunkTargetTokens: string;
   chunkMaxTokens: string;
   chunkOverlapTokens: string;
+  parentChunkTokens: string;
+  childChunkTokens: string;
   answerMode: string;
   remark: string;
 };
@@ -94,9 +101,9 @@ function getKnowledgeTypeOptions(t: TFunction) {
 
 function getChunkProviderOptions(t: TFunction) {
   return [
-    { value: KnowledgeChunkProvider.Fixed, label: t("knowledge.chunkFixed") },
     { value: KnowledgeChunkProvider.Structured, label: t("knowledge.chunkStructured") },
-    { value: KnowledgeChunkProvider.Semantic, label: t("knowledge.chunkSemantic") },
+    { value: KnowledgeChunkProvider.Recursive, label: t("knowledge.chunkRecursive") },
+    { value: KnowledgeChunkProvider.ParentChild, label: t("knowledge.chunkParentChild") },
   ];
 }
 
@@ -119,10 +126,16 @@ function buildForm(item: KnowledgeBase | null): EditForm {
     defaultTopK: String(item.defaultTopK),
     defaultScoreThreshold: String(item.defaultScoreThreshold),
     defaultRerankLimit: String(item.defaultRerankLimit),
-    chunkProvider: item.chunkProvider,
+    chunkProvider: item.chunkProvider === "semantic"
+      ? KnowledgeChunkProvider.Structured
+      : item.chunkProvider === "fixed"
+        ? KnowledgeChunkProvider.Recursive
+        : item.chunkProvider,
     chunkTargetTokens: String(item.chunkTargetTokens),
     chunkMaxTokens: String(item.chunkMaxTokens),
     chunkOverlapTokens: String(item.chunkOverlapTokens),
+    parentChunkTokens: String(item.parentChunkTokens || 900),
+    childChunkTokens: String(item.childChunkTokens || 200),
     answerMode: String(item.answerMode),
     remark: item.remark || "",
   };
@@ -140,6 +153,8 @@ function buildPayload(form: EditForm): CreateKnowledgeBasePayload {
     chunkTargetTokens: Number(form.chunkTargetTokens),
     chunkMaxTokens: Number(form.chunkMaxTokens),
     chunkOverlapTokens: Number(form.chunkOverlapTokens),
+    parentChunkTokens: Number(form.parentChunkTokens),
+    childChunkTokens: Number(form.childChunkTokens),
     answerMode: Number(form.answerMode),
     remark: form.remark.trim(),
   };
@@ -207,6 +222,7 @@ function KnowledgeBaseFormDialogBody({
     formState: { errors },
   } = form;
   const knowledgeType = watch("knowledgeType");
+  const chunkProvider = watch("chunkProvider");
   const isFAQKnowledgeBase = knowledgeType === KnowledgeBaseType.FAQ;
 
   useEffect(() => {
@@ -332,7 +348,7 @@ function KnowledgeBaseFormDialogBody({
           </Field>
 
           {!isFAQKnowledgeBase ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+            <div className="flex flex-col gap-4">
             <Field data-invalid={!!errors.chunkProvider}>
               <FieldLabel htmlFor="kb-chunk-provider">{t("knowledge.chunkProvider")}</FieldLabel>
               <FieldContent>
@@ -351,8 +367,10 @@ function KnowledgeBaseFormDialogBody({
                   )}
                 />
                 <FieldError errors={[errors.chunkProvider]} />
+                <FieldDescription>{t(`knowledge.chunkDescription.${chunkProvider}`)}</FieldDescription>
               </FieldContent>
             </Field>
+            <div className="grid grid-cols-3 gap-4">
             <Field data-invalid={!!errors.chunkTargetTokens}>
               <FieldLabel htmlFor="kb-chunk-target-tokens">
                 {t("knowledge.targetToken")}
@@ -399,6 +417,41 @@ function KnowledgeBaseFormDialogBody({
                 <FieldError errors={[errors.chunkOverlapTokens]} />
               </FieldContent>
             </Field>
+            </div>
+            {chunkProvider === KnowledgeChunkProvider.ParentChild ? (
+              <div className="grid grid-cols-2 gap-4">
+                <Field data-invalid={!!errors.parentChunkTokens}>
+                  <FieldLabel htmlFor="kb-parent-chunk-tokens">{t("knowledge.parentChunkToken")}</FieldLabel>
+                  <FieldContent>
+                    <Input
+                      id="kb-parent-chunk-tokens"
+                      type="number"
+                      min="1"
+                      max="8000"
+                      aria-invalid={!!errors.parentChunkTokens}
+                      {...register("parentChunkTokens")}
+                    />
+                    <FieldDescription>{t("knowledge.parentChunkTokenDescription")}</FieldDescription>
+                    <FieldError errors={[errors.parentChunkTokens]} />
+                  </FieldContent>
+                </Field>
+                <Field data-invalid={!!errors.childChunkTokens}>
+                  <FieldLabel htmlFor="kb-child-chunk-tokens">{t("knowledge.childChunkToken")}</FieldLabel>
+                  <FieldContent>
+                    <Input
+                      id="kb-child-chunk-tokens"
+                      type="number"
+                      min="1"
+                      max="2000"
+                      aria-invalid={!!errors.childChunkTokens}
+                      {...register("childChunkTokens")}
+                    />
+                    <FieldDescription>{t("knowledge.childChunkTokenDescription")}</FieldDescription>
+                    <FieldError errors={[errors.childChunkTokens]} />
+                  </FieldContent>
+                </Field>
+              </div>
+            ) : null}
             </div>
           ) : null}
 

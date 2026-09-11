@@ -162,6 +162,22 @@ func registerDashboardTagRoutes(group *gin.RouterGroup) {
 }
 
 func registerDashboardConversationRoutes(group *gin.RouterGroup) {
+	group.GET("/sales_leads", dashboard.SalesLeadGetList)
+	group.GET("/sales_leads/:leadId", dashboard.SalesLeadGetBy)
+	group.POST("/sales_leads/:leadId/update", dashboard.SalesLeadPostUpdate)
+	group.POST("/sales_leads/:leadId/follow_up", dashboard.SalesLeadPostFollowUp)
+	group.POST("/:id/suggest_reply", dashboard.ConversationPostSuggestReply)
+	group.GET("/:id/memory", dashboard.ConversationGetMemory)
+	group.POST("/:id/work", dashboard.ConversationPostWork)
+	group.POST("/:id/translate_message", dashboard.ConversationPostTranslateMessage)
+	group.POST("/:id/translate_text", dashboard.ConversationPostTranslateText)
+	group.GET("/colleagues", dashboard.ConversationGetColleagues)
+	group.GET("/:id/collaboration", dashboard.ConversationGetCollaboration)
+	group.POST("/:id/notes", dashboard.ConversationPostNote)
+	group.POST("/:id/memory/refresh", dashboard.ConversationPostMemoryRefresh)
+	group.POST("/:id/memory/update", dashboard.ConversationPostMemoryUpdate)
+	group.POST("/:id/memory/profile/update", dashboard.ConversationPostProfileUpdate)
+	group.GET("/channels", dashboard.ConversationGetChannels)
 	group.GET("/:id", dashboard.ConversationGetBy)
 	group.POST("/add_tag", dashboard.ConversationPostAdd_tag)
 	group.POST("/assign", dashboard.ConversationPostAssign)
@@ -173,6 +189,7 @@ func registerDashboardConversationRoutes(group *gin.RouterGroup) {
 	group.Any("/message_list", dashboard.ConversationAnyMessage_list)
 	group.POST("/read", dashboard.ConversationPostRead)
 	group.POST("/recall_message", dashboard.ConversationPostRecall_message)
+	group.POST("/retry_message", dashboard.ConversationPostRetry_message)
 	group.POST("/remove_tag", dashboard.ConversationPostRemove_tag)
 	group.POST("/send_message", dashboard.ConversationPostSend_message)
 	group.POST("/transfer", dashboard.ConversationPostTransfer)
@@ -214,6 +231,10 @@ func registerDashboardQuickReplyRoutes(group *gin.RouterGroup) {
 }
 
 func registerDashboardChannelRoutes(group *gin.RouterGroup) {
+	group.GET("/:id/messenger", dashboard.ChannelGetMessenger)
+	group.POST("/:id/messenger/:action", dashboard.ChannelPostMessenger)
+	group.GET("/:id/whatsapp", dashboard.ChannelGetWhatsApp)
+	group.POST("/:id/whatsapp/:action", dashboard.ChannelPostWhatsApp)
 	group.GET("/:id", dashboard.ChannelGetBy)
 	group.POST("/create", dashboard.ChannelPostCreate)
 	group.POST("/delete", dashboard.ChannelPostDelete)
@@ -337,10 +358,15 @@ func registerDashboardKnowledgeDirectoryRoutes(group *gin.RouterGroup) {
 }
 
 func registerDashboardKnowledgeDocumentRoutes(group *gin.RouterGroup) {
+	group.GET("/ingestion/:id", dashboard.KnowledgeDocumentGetIngestion)
 	group.GET("/:id", dashboard.KnowledgeDocumentGetBy)
+	group.GET("/:id/index_status", dashboard.KnowledgeDocumentGetIndex_status)
 	group.POST("/batch_delete", dashboard.KnowledgeDocumentPostBatch_delete)
 	group.POST("/batch_move", dashboard.KnowledgeDocumentPostBatch_move)
 	group.POST("/create", dashboard.KnowledgeDocumentPostCreate)
+	group.POST("/crawl_website", dashboard.KnowledgeDocumentPostCrawl_website)
+	group.POST("/ingestion/:id/retry", dashboard.KnowledgeDocumentPostRetry_ingestion)
+	group.POST("/upload", dashboard.KnowledgeDocumentPostUpload)
 	group.POST("/delete", dashboard.KnowledgeDocumentPostDelete)
 	group.Any("/list", dashboard.KnowledgeDocumentAnyList)
 	group.POST("/update", dashboard.KnowledgeDocumentPostUpdate)
@@ -363,6 +389,7 @@ func registerDashboardKnowledgeRetrieveRoutes(group *gin.RouterGroup) {
 	group.POST("/build", dashboard.KnowledgeRetrievePostBuild)
 	group.POST("/debug/answer", dashboard.KnowledgeRetrievePostDebugAnswer)
 	group.POST("/debug/search", dashboard.KnowledgeRetrievePostDebugSearch)
+	group.POST("/preview", dashboard.KnowledgeRetrievePostPreview)
 }
 
 func registerDashboardKnowledgeRetrieveLogRoutes(group *gin.RouterGroup) {

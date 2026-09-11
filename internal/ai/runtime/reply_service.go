@@ -23,6 +23,7 @@ func newAIReplyService() *aiReplyService {
 }
 
 type aiReplyService struct {
+	queue       replyQueue
 	eligibility *replyEligibility
 	executor    *runtimeReplyExecutor
 	interrupts  *replyInterruptService

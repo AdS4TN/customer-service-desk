@@ -16,6 +16,7 @@ type ApplicationRunInput struct {
 	ConversationID int64
 	MessageID      int64
 	AIAgentID      int64
+	OnStream       func(StreamEvent)
 }
 
 type ApplicationResumeInput struct {
@@ -102,5 +103,11 @@ func (s *AgentApplicationService) loadRequest(input ApplicationRunInput) (RunInp
 	if config == nil || config.Status != enums.StatusOk {
 		return RunInput{}, errorsx.InvalidParam("ai config is unavailable")
 	}
-	return RunInput{Conversation: *conversation, UserMessage: *message, AIAgent: *agent, AIConfig: *config}, nil
+	return RunInput{
+		Conversation: *conversation,
+		UserMessage:  *message,
+		AIAgent:      *agent,
+		AIConfig:     *config,
+		OnStream:     input.OnStream,
+	}, nil
 }

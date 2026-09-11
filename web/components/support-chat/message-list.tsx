@@ -22,6 +22,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { ImMessage } from "@/lib/api/im"
+import type { StreamingReply } from "@/lib/stores/support-chat"
 import { renderIMMessageHTML } from "@/lib/im-message"
 import { cn, formatDateTime } from "@/lib/utils"
 import { useI18n } from "@/i18n/provider"
@@ -32,6 +33,9 @@ type SupportChatMessageListProps = {
   hasMoreOlder?: boolean
   loadingOlder?: boolean
   onLoadOlder?: () => Promise<void>
+  streamingReply?: StreamingReply | null
+  assistantName?: string
+  assistantAvatar?: string
 }
 
 export type SupportChatMessageListHandle = {
@@ -81,6 +85,9 @@ export const SupportChatMessageList = forwardRef<SupportChatMessageListHandle, S
       hasMoreOlder = false,
       loadingOlder = false,
       onLoadOlder,
+      streamingReply,
+      assistantName,
+      assistantAvatar,
     },
     ref
   ) {
@@ -97,6 +104,12 @@ export const SupportChatMessageList = forwardRef<SupportChatMessageListHandle, S
     const scrollToBottom = useCallback(() => {
       scrollerRef.current?.scrollToBottom()
     }, [])
+
+    useEffect(() => {
+      if (streamingReply && shouldStickToBottomRef.current) {
+        scrollToBottom()
+      }
+    }, [scrollToBottom, streamingReply])
 
     const handleImageSettled = useCallback(() => {
       if (shouldStickToBottomRef.current) {
@@ -146,7 +159,7 @@ export const SupportChatMessageList = forwardRef<SupportChatMessageListHandle, S
           ) : null
         }
       >
-        {safeMessages.length === 0 ? (
+        {safeMessages.length === 0 && !streamingReply ? (
           <div className="flex min-h-32 items-center justify-center px-3 py-6 text-center text-sm leading-6 text-muted-foreground">
             {t("supportChat.emptyPrompt")}
           </div>
@@ -172,10 +185,74 @@ export const SupportChatMessageList = forwardRef<SupportChatMessageListHandle, S
             </ConversationMessageScrollerItem>
           )
         })}
+
+        {streamingReply ? (
+          <ConversationMessageScrollerItem messageId={`stream-${streamingReply.requestId}`}>
+            <StreamingMessageItem
+              content={streamingReply.content}
+              assistantName={assistantName}
+              assistantAvatar={assistantAvatar}
+            />
+          </ConversationMessageScrollerItem>
+        ) : null}
       </ConversationMessageScroller>
     )
   }
 )
+
+function StreamingMessageItem({
+  content,
+  assistantName,
+  assistantAvatar,
+}: {
+  content: string
+  assistantName?: string
+  assistantAvatar?: string
+}) {
+  const t = useI18n()
+  const senderName = assistantName?.trim() || t("supportChat.agentLabel")
+  const htmlContent = renderIMMessageHTML({ messageType: "text", content })
+
+  return (
+    <ConversationMessageRow
+      align="start"
+      avatar={
+        <Avatar>
+          {assistantAvatar?.trim() ? <AvatarImage src={assistantAvatar.trim()} alt="" /> : null}
+          <AvatarFallback className="bg-muted text-muted-foreground">
+            {senderName.slice(0, 1).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+      }
+      contentClassName="max-w-[86%] gap-1.5"
+      headerClassName="flex-wrap gap-x-2 gap-y-1 px-1 text-[11px]"
+      header={
+        <>
+          <span className="font-medium">{senderName}</span>
+          <span>{t("supportChat.justNow")}</span>
+        </>
+      }
+    >
+      <ConversationMessageBubble
+        variant="system"
+        className="rounded-lg border-0 !border-border !bg-card px-3 py-2 text-sm leading-normal !text-card-foreground shadow-[0_10px_22px_rgba(15,23,42,0.06)] dark:!bg-background"
+      >
+        {content ? (
+          <ImMessageHTML
+            html={htmlContent}
+            className="[&_a]:text-card-foreground [&_a]:underline"
+          />
+        ) : (
+          <span className="flex h-5 items-center gap-1" aria-hidden="true">
+            <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground/70" />
+            <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground/70 [animation-delay:150ms]" />
+            <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground/70 [animation-delay:300ms]" />
+          </span>
+        )}
+      </ConversationMessageBubble>
+    </ConversationMessageRow>
+  )
+}
 
 type MessageItemProps = {
   message: ImMessage

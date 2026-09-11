@@ -12,6 +12,7 @@ import { Maximize2Icon, Minimize2Icon } from "lucide-react"
 import { config, MdEditor, NormalToolbar, type ExposeParam } from "md-editor-rt"
 import { useTheme } from "next-themes"
 
+import "md-editor-rt/lib/style.css"
 import "./markdown-editor.css"
 
 import { EditorModeSwitch } from "./editor-mode-switch"

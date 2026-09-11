@@ -1,4 +1,5 @@
 import { readSession } from "@/lib/auth"
+import type { ReceptionPolicy } from "@/lib/reception"
 import { request, requestBlob } from "@/lib/api/client"
 import { createWebSocketBaseUrl } from "@/lib/api/websocket"
 import { translateCurrentMessage } from "@/i18n/messages"
@@ -236,8 +237,12 @@ export type ResetChannelUserTokenSecretResult = {
 }
 
 export type AIAgent = {
+	 receptionPolicy?: ReceptionPolicy
   id: number
   name: string
+  displayName: string
+  avatar: string
+  statusText: string
   description: string
   status: number
   statusName: string
@@ -283,7 +288,11 @@ export type AIAgent = {
 }
 
 export type CreateAIAgentPayload = {
+	 receptionPolicy?: ReceptionPolicy
   name: string
+  displayName: string
+  avatar: string
+  statusText: string
   description: string
   aiConfigId: number
 	maxSteps?: number
@@ -927,6 +936,41 @@ export function fetchChannels(
 
 export function fetchChannel(id: number) {
   return request<AdminChannel>(`/api/dashboard/channel/${id}`)
+}
+
+export type WhatsAppConnection = {
+  state: "disconnected" | "connecting" | "qr" | "connected" | "expired" | "logged_out" | "error" | "disabled"
+  account: string
+  qr?: string
+  qrExpiresAt?: string
+  error?: string
+}
+
+export function fetchWhatsAppConnection(id: number) {
+  return request<WhatsAppConnection>(`/api/dashboard/channel/${id}/whatsapp`)
+}
+
+export type MessengerConnection = {
+  state: "disconnected" | "connecting" | "connected" | "error" | "disabled"
+  account: string
+  hasCredentials?: boolean
+  encryptedState?: string
+  error?: string
+}
+
+export function fetchMessengerConnection(id: number) {
+  return request<MessengerConnection>(`/api/dashboard/channel/${id}/messenger`)
+}
+
+export function updateMessengerConnection(id: number, action: "login" | "connect" | "disconnect" | "logout", cookie?: string) {
+  return request<MessengerConnection>(`/api/dashboard/channel/${id}/messenger/${action}`, {
+    method: "POST",
+    ...(action === "login" ? { body: JSON.stringify({ cookie }) } : {}),
+  })
+}
+
+export function updateWhatsAppConnection(id: number, action: "connect" | "disconnect" | "logout") {
+  return request<WhatsAppConnection>(`/api/dashboard/channel/${id}/whatsapp/${action}`, { method: "POST" })
 }
 
 export function fetchWxWorkKFAccounts() {
@@ -1770,6 +1814,8 @@ export type KnowledgeBase = {
   chunkTargetTokens: number
   chunkMaxTokens: number
   chunkOverlapTokens: number
+  parentChunkTokens: number
+  childChunkTokens: number
   answerMode: number
   answerModeName: string
   documentCount: number
@@ -1792,6 +1838,8 @@ export type CreateKnowledgeBasePayload = {
   chunkTargetTokens: number
   chunkMaxTokens: number
   chunkOverlapTokens: number
+  parentChunkTokens: number
+  childChunkTokens: number
   answerMode: number
   remark: string
 }
@@ -1817,6 +1865,13 @@ export type KnowledgeDocument = {
   indexedAt?: string | null
   indexError: string
   contentHash: string
+  chunkConfigOverride: boolean
+  chunkProvider: string
+  chunkTargetTokens: number
+  chunkMaxTokens: number
+  chunkOverlapTokens: number
+  parentChunkTokens: number
+  childChunkTokens: number
   createdAt: string
   updatedAt: string
   createUserName: string
@@ -1824,6 +1879,73 @@ export type KnowledgeDocument = {
 }
 
 export type KnowledgeDocumentListItem = Omit<KnowledgeDocument, "content">
+
+export type KnowledgeChunkPreview = {
+  chunkNo: number
+  title: string
+  content: string
+  contextContent?: string
+  chunkType: string
+  sectionPath: string
+  charCount: number
+  tokenCount: number
+}
+
+export type KnowledgeDocumentChunkPreview = {
+  provider: string
+  targetTokens: number
+  maxTokens: number
+  overlapTokens: number
+  parentTokens: number
+  childTokens: number
+  chunkCount: number
+  chunks: KnowledgeChunkPreview[]
+}
+
+export type KnowledgeIngestionJob = {
+  id: number
+  knowledgeBaseId: number
+  documentId: number
+  assetId: number
+  filename: string
+  fileSize: number
+  title: string
+  status: "queued" | "processing" | "completed" | "failed"
+  stage: "queued" | "parsing" | "chunking" | "embedding" | "indexing" | "completed"
+  parser: string
+  chunkCount: number
+  progress: number
+  parseMs: number
+  chunkMs: number
+  embeddingMs: number
+  indexMs: number
+  attempts: number
+  error: string
+  startedAt?: string | null
+  finishedAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type UploadKnowledgeDocumentPayload = {
+  file: File
+  knowledgeBaseId: number
+  directoryId: number
+  title: string
+  chunkConfigOverride: boolean
+  chunkProvider: string
+  chunkTargetTokens: number
+  chunkMaxTokens: number
+  chunkOverlapTokens: number
+  parentChunkTokens: number
+  childChunkTokens: number
+}
+
+export type CrawlKnowledgeWebsitePayload = Omit<UploadKnowledgeDocumentPayload, "file" | "title"> & {
+  url: string
+  maxPages: number
+  maxDepth: number
+}
 
 export type KnowledgeFAQ = {
   id: number
@@ -1859,6 +1981,7 @@ export type KnowledgeSearchResult = {
   title: string
   sectionPath: string
   content: string
+  matchedContent?: string
   score: number
   rerankScore?: number
 }
@@ -1996,6 +2119,27 @@ export type CreateKnowledgeDocumentPayload = {
   title: string
   contentType: string
   content: string
+  chunkConfigOverride?: boolean
+  chunkProvider?: string
+  chunkTargetTokens?: number
+  chunkMaxTokens?: number
+  chunkOverlapTokens?: number
+  parentChunkTokens?: number
+  childChunkTokens?: number
+}
+
+export type PreviewKnowledgeDocumentPayload = {
+  knowledgeBaseId: number
+  title: string
+  contentType: string
+  content: string
+  chunkConfigOverride?: boolean
+  chunkProvider?: string
+  chunkTargetTokens?: number
+  chunkMaxTokens?: number
+  chunkOverlapTokens?: number
+  parentChunkTokens?: number
+  childChunkTokens?: number
 }
 
 export type UpdateKnowledgeDocumentPayload = CreateKnowledgeDocumentPayload & {
@@ -2169,6 +2313,48 @@ export function fetchKnowledgeDocument(id: number) {
   return request<KnowledgeDocument>(`/api/dashboard/knowledge-document/${id}`)
 }
 
+export function fetchKnowledgeDocumentIndexStatus(id: number) {
+  return request<KnowledgeDocumentListItem>(
+    `/api/dashboard/knowledge-document/${id}/index_status`
+  )
+}
+
+export function uploadKnowledgeDocument(payload: UploadKnowledgeDocumentPayload) {
+  const form = new FormData()
+  form.set("file", payload.file)
+  form.set("knowledgeBaseId", String(payload.knowledgeBaseId))
+  form.set("directoryId", String(payload.directoryId))
+  form.set("title", payload.title)
+  form.set("chunkConfigOverride", String(payload.chunkConfigOverride))
+  form.set("chunkProvider", payload.chunkProvider)
+  form.set("chunkTargetTokens", String(payload.chunkTargetTokens))
+  form.set("chunkMaxTokens", String(payload.chunkMaxTokens))
+  form.set("chunkOverlapTokens", String(payload.chunkOverlapTokens))
+  form.set("parentChunkTokens", String(payload.parentChunkTokens))
+  form.set("childChunkTokens", String(payload.childChunkTokens))
+  return request<KnowledgeIngestionJob>("/api/dashboard/knowledge-document/upload", {
+    method: "POST",
+    body: form,
+  })
+}
+
+export function crawlKnowledgeWebsite(payload: CrawlKnowledgeWebsitePayload) {
+  return request<KnowledgeIngestionJob>("/api/dashboard/knowledge-document/crawl_website", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+export function fetchKnowledgeIngestionJob(id: number) {
+  return request<KnowledgeIngestionJob>(`/api/dashboard/knowledge-document/ingestion/${id}`)
+}
+
+export function retryKnowledgeIngestionJob(id: number) {
+  return request<KnowledgeIngestionJob>(`/api/dashboard/knowledge-document/ingestion/${id}/retry`, {
+    method: "POST",
+  })
+}
+
 export function createKnowledgeDocument(payload: CreateKnowledgeDocumentPayload) {
   return request<KnowledgeDocument>("/api/dashboard/knowledge-document/create", {
     method: "POST",
@@ -2208,6 +2394,13 @@ export function buildKnowledgeDocumentIndex(documentId: number) {
   return request<void>("/api/dashboard/knowledge-retrieve/build", {
     method: "POST",
     body: JSON.stringify({ documentId }),
+  })
+}
+
+export function previewKnowledgeDocumentChunks(payload: PreviewKnowledgeDocumentPayload) {
+  return request<KnowledgeDocumentChunkPreview>("/api/dashboard/knowledge-retrieve/preview", {
+    method: "POST",
+    body: JSON.stringify(payload),
   })
 }
 

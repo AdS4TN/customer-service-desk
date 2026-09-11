@@ -62,10 +62,10 @@ function getAnswerStatusOptions(t: TFunction) {
 function getProviderOptions(t: TFunction) {
   return [
     { value: "all", label: t("knowledge.allChunkProviders") },
-    { value: "fixed", label: t("knowledge.chunkFixed") },
     { value: "structured", label: t("knowledge.chunkStructured") },
+    { value: "recursive", label: t("knowledge.chunkRecursive") },
+    { value: "parent_child", label: t("knowledge.chunkParentChild") },
     { value: "faq", label: t("knowledge.chunkFAQ") },
-    { value: "semantic", label: t("knowledge.chunkSemantic") },
   ]
 }
 

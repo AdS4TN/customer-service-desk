@@ -13,6 +13,7 @@ type RunInput struct {
 	AIConfig     models.AIConfig
 	CheckPointID string
 	Debug        bool
+	OnStream     func(StreamEvent)
 }
 
 // ResumeInput extends the prepared input with an approved interrupt payload.
@@ -101,7 +102,7 @@ const (
 	StreamEventFailed    StreamEventType = "failed"
 )
 
-// StreamEvent is the transport-neutral event contract for future streaming.
+// StreamEvent is the transport-neutral event contract for runtime streaming.
 type StreamEvent struct {
 	Type       StreamEventType `json:"type"`
 	RunID      string          `json:"runId,omitempty"`

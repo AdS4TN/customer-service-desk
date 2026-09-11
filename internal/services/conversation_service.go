@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 
 	"agent-desk/internal/events"
@@ -53,8 +54,25 @@ func (s *conversationService) FindPageByCnd(cnd *sqls.Cnd) (list []models.Conver
 	return repositories.ConversationRepository.FindPageByCnd(sqls.DB(), cnd)
 }
 
-func (s *conversationService) ListConversations(userID int64, filter request.AgentConversationFilter, keyword string, paging *sqls.Paging) ([]models.Conversation, *sqls.Paging, error) {
+func (s *conversationService) ListConversations(userID int64, filter request.AgentConversationFilter, keyword string, paging *sqls.Paging, options ...request.InboxFilter) ([]models.Conversation, *sqls.Paging, error) {
 	cnd := sqls.NewCnd().Page(paging.Page, paging.Limit)
+	if len(options) > 0 {
+		opt := options[0]
+		if opt.ChannelID > 0 {
+			cnd.Eq("channel_id", opt.ChannelID)
+		}
+		if opt.ChannelType != "" {
+			if opt.ChannelType != enums.ChannelTypeWeb && opt.ChannelType != enums.ChannelTypeWhatsApp && opt.ChannelType != enums.ChannelTypeMessenger {
+				return nil, nil, errorsx.InvalidParamI18n("error.e0121")
+			}
+			channels := ChannelService.Find(sqls.NewCnd().Eq("channel_type", opt.ChannelType))
+			ids := []int64{-1}
+			for _, channel := range channels {
+				ids = append(ids, channel.ID)
+			}
+			cnd.In("channel_id", ids)
+		}
+	}
 
 	if strs.IsNotBlank(keyword) {
 		keyword = strings.TrimSpace(keyword)
@@ -63,6 +81,10 @@ func (s *conversationService) ListConversations(userID int64, filter request.Age
 	}
 
 	switch filter {
+	case request.AgentConversationFilterAll, "":
+		cnd.Desc("last_active_at").Desc("id")
+	case request.AgentConversationFilterUnread:
+		cnd.Gt("agent_unread_count", 0).Desc("last_active_at").Desc("id")
 	case request.AgentConversationFilterAIServing:
 		cnd.Eq("current_assignee_id", 0).Eq("status", enums.IMConversationStatusAIServing).Desc("last_active_at").Desc("id")
 	case request.AgentConversationFilterMine:
@@ -72,7 +94,15 @@ func (s *conversationService) ListConversations(userID int64, filter request.Age
 	case request.AgentConversationFilterPending:
 		cnd.Eq("current_assignee_id", 0).Eq("status", enums.IMConversationStatusPending).Asc("last_active_at").Desc("id")
 	case request.AgentConversationFilterClosed:
-		cnd.Eq("current_assignee_id", userID).Eq("status", enums.IMConversationStatusClosed).Desc("last_active_at").Desc("id")
+		cnd.Eq("status", enums.IMConversationStatusClosed).Desc("last_active_at").Desc("id")
+	case "needs_reply", "waiting_customer", "snoozed", "overdue":
+		cnd.Eq("current_assignee_id", userID).Eq("status", enums.IMConversationStatusActive)
+		if filter == "overdue" {
+			cnd.Eq("work_status", enums.ConversationWorkStatusNeedsReply).Where("reply_due_at <= ?", time.Now())
+		} else {
+			cnd.Eq("work_status", string(filter))
+		}
+		cnd.Asc("reply_due_at").Asc("snoozed_until").Desc("id")
 	default:
 		return nil, nil, errorsx.InvalidParamI18n("error.e0121")
 	}
@@ -196,7 +226,8 @@ func (s *conversationService) AssignConversation(req request.AssignConversationR
 		if conversation == nil {
 			return errorsx.InvalidParamI18n("error.e0116")
 		}
-		if conversation.Status != enums.IMConversationStatusPending {
+		canTakeOverAI := conversation.Status == enums.IMConversationStatusAIServing && req.AssigneeID == operator.UserID
+		if conversation.Status != enums.IMConversationStatusPending && !canTakeOverAI {
 			return errorsx.InvalidParamI18n("error.e0135")
 		}
 		now := time.Now()
@@ -206,13 +237,16 @@ func (s *conversationService) AssignConversation(req request.AssignConversationR
 		if err := ConversationAssignmentService.CreateAssignment(ctx, req.ConversationID, conversation.CurrentAssigneeID, req.AssigneeID, enums.IMAssignmentTypeAssign, req.Reason, operator, now); err != nil {
 			return err
 		}
-		if err := repositories.ConversationRepository.Updates(ctx.Tx, req.ConversationID, map[string]any{
+		if err := repositories.AssignInboxConversation(ctx.Tx, conversation, map[string]any{
 			"current_assignee_id": req.AssigneeID,
 			"status":              enums.IMConversationStatusActive,
 			"update_user_id":      operator.UserID,
 			"update_user_name":    operator.Username,
 			"updated_at":          now,
 		}); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errorsx.InvalidParamI18n("error.inbox.changed")
+			}
 			return err
 		}
 		if err := ConversationEventLogService.CreateEvent(ctx, req.ConversationID, enums.IMEventTypeAssign, enums.IMSenderTypeAgent, operator.UserID, "会话已分配", s.buildEventPayload(map[string]any{
@@ -767,13 +801,36 @@ func (s *conversationService) LinkConversationCustomer(conversationID, customerI
 			return errorsx.InvalidParamI18n("error.e0116")
 		}
 		now := time.Now()
-		return repositories.ConversationRepository.Updates(ctx.Tx, conversationID, map[string]any{
+		if err := repositories.ConversationRepository.Updates(ctx.Tx, conversationID, map[string]any{
 			"customer_id":      customerID,
 			"customer_name":    strings.TrimSpace(cust.Name),
 			"update_user_id":   operator.UserID,
 			"update_user_name": operator.Username,
 			"updated_at":       now,
-		})
+		}); err != nil {
+			return err
+		}
+		linked := *current
+		linked.CustomerID = customerID
+		// Recompute both sides of an explicit relink; never leave AI-filled contacts
+		// attached to the former customer. Lock customers in a stable order.
+		profiles := []models.Conversation{*current, linked}
+		if profiles[0].CustomerID > profiles[1].CustomerID {
+			profiles[0], profiles[1] = profiles[1], profiles[0]
+		}
+		for _, profile := range profiles {
+			if err := syncCustomerProfile(ctx.Tx, profile); err != nil {
+				return err
+			}
+		}
+		if err := repositories.ConversationMemoryRepository.Queue(ctx.Tx, conversationID); err != nil {
+			return err
+		}
+		name := cust.Name
+		if updated := repositories.CustomerRepository.Get(ctx.Tx, customerID); updated != nil {
+			name = updated.Name
+		}
+		return repositories.SalesLeadRepository.ReassignCustomer(ctx.Tx, conversationID, customerID, name)
 	})
 	if err != nil {
 		return err
@@ -809,6 +866,10 @@ func externalSourceForChannelType(channelType string) enums.ExternalSource {
 	switch strings.TrimSpace(channelType) {
 	case enums.ChannelTypeWxWorkKF:
 		return enums.ExternalSourceWxWorkKF
+	case enums.ChannelTypeWhatsApp:
+		return enums.ExternalSourceWhatsApp
+	case enums.ChannelTypeMessenger:
+		return enums.ExternalSourceMessenger
 	case enums.ChannelTypeWeb:
 		return enums.ExternalSourceGuest
 	default:

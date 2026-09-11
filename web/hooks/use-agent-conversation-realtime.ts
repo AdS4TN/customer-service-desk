@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import { toast } from "sonner"
+import { shouldNotifyCustomerMessage } from "@/lib/reception-work"
 
 import { createAdminWebSocketUrl } from "@/lib/api/admin"
 import { type AgentMessage } from "@/lib/api/agent"
@@ -47,10 +48,19 @@ export function useAgentConversationRealtime() {
   }, [selectedConversationId])
 
   useEffect(() => {
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined
+    const refreshList = () => {
+      if (refreshTimer) return
+      refreshTimer = setTimeout(() => {
+        refreshTimer = undefined
+        void useAgentConversationsStore.getState().loadConversations().catch(() => {})
+      }, 300)
+    }
     const realtime = createRealtimeConnectionManager({
       createSocket: () => new WebSocket(createAdminWebSocketUrl()),
       onStatusChange: setRealtimeStatus,
       onOpen: (socket) => {
+        void useAgentConversationsStore.getState().resyncRealtimeData().catch(() => {})
         console.info("[agent-realtime] websocket connected", {
           url: socket.url,
         })
@@ -107,14 +117,9 @@ export function useAgentConversationRealtime() {
               return
             }
             store.applyRealtimeMessageCreated(message)
+            refreshList()
 
-            const shouldNotify =
-              message.senderType === "customer" &&
-              payload?.status === 2 &&
-              (payload.currentAssigneeId ?? 0) > 0 &&
-              payload.currentAssigneeId === currentUserIdRef.current &&
-              typeof document !== "undefined" &&
-              document.visibilityState !== "visible"
+            const shouldNotify = shouldNotifyCustomerMessage(message.senderType, payload?.status, payload?.currentAssigneeId, currentUserIdRef.current, typeof document !== "undefined" && document.visibilityState !== "visible")
 
             if (shouldNotify) {
               showNotification(t("conversation.newMessage"), getNotificationBody(message), () => {
@@ -135,9 +140,7 @@ export function useAgentConversationRealtime() {
           if (eventType.startsWith("conversation.") && payload) {
             store.applyRealtimeConversationChanged(payload)
             if (shouldReloadConversationListForRealtimePatch(payload)) {
-              void store.resyncRealtimeData(conversationId).catch((error) => {
-                toast.error(error instanceof Error ? error.message : t("conversation.syncConversationListFailed"))
-              })
+              refreshList()
             }
           }
         } catch {
@@ -169,6 +172,7 @@ export function useAgentConversationRealtime() {
     realtime.connect()
 
     return () => {
+      clearTimeout(refreshTimer)
       realtimeRef.current = null
       realtime.disconnect()
       subscribedConversationIdRef.current = null

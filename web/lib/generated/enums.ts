@@ -73,11 +73,24 @@ export const ContactTypeLabels: Record<ContactType, string> = {
   [ContactType.Other]: "其他",
 }
 
+export enum ConversationWorkStatus {
+  NeedsReply = "needs_reply",
+  WaitingCustomer = "waiting_customer",
+  Snoozed = "snoozed",
+}
+export const ConversationWorkStatusLabels: Record<ConversationWorkStatus, string> = {
+  [ConversationWorkStatus.NeedsReply]: "待回复",
+  [ConversationWorkStatus.WaitingCustomer]: "等待客户",
+  [ConversationWorkStatus.Snoozed]: "暂缓",
+}
+
 export enum ExternalSource {
   Guest = "guest",
   WxWorkKF = "wxwork_kf",
   User = "user",
   Telegram = "telegram",
+  WhatsApp = "whatsapp",
+  Messenger = "messenger",
   ZaloOA = "zalo_oa",
 }
 export const ExternalSourceLabels: Record<ExternalSource, string> = {
@@ -85,6 +98,8 @@ export const ExternalSourceLabels: Record<ExternalSource, string> = {
   [ExternalSource.WxWorkKF]: "企业微信客服",
   [ExternalSource.User]: "用户",
   [ExternalSource.Telegram]: "Telegram",
+  [ExternalSource.WhatsApp]: "WhatsApp",
+  [ExternalSource.Messenger]: "Messenger",
   [ExternalSource.ZaloOA]: "Zalo OA",
 }
 
@@ -248,14 +263,16 @@ export const KnowledgeBaseTypeLabels: Record<KnowledgeBaseType, string> = {
 export enum KnowledgeChunkProvider {
   Fixed = "fixed",
   Structured = "structured",
+  Recursive = "recursive",
+  ParentChild = "parent_child",
   FAQ = "faq",
-  Semantic = "semantic",
 }
 export const KnowledgeChunkProviderLabels: Record<KnowledgeChunkProvider, string> = {
   [KnowledgeChunkProvider.Fixed]: "固定长度",
   [KnowledgeChunkProvider.Structured]: "结构化分块",
+  [KnowledgeChunkProvider.Recursive]: "递归分块",
+  [KnowledgeChunkProvider.ParentChild]: "父子分块",
   [KnowledgeChunkProvider.FAQ]: "问答式分块",
-  [KnowledgeChunkProvider.Semantic]: "语义分块",
 }
 
 export enum KnowledgeChunkType {
@@ -330,6 +347,72 @@ export const KnowledgeRetrieveSceneLabels: Record<KnowledgeRetrieveScene, string
   [KnowledgeRetrieveScene.QA]: "问答",
 }
 
+export enum LeadStatus {
+  New = "new",
+  Following = "following",
+  Qualified = "qualified",
+  Won = "won",
+  Lost = "lost",
+  Archived = "archived",
+}
+export const LeadStatusLabels: Record<LeadStatus, string> = {
+  [LeadStatus.New]: "新线索",
+  [LeadStatus.Following]: "跟进中",
+  [LeadStatus.Qualified]: "有效询盘",
+  [LeadStatus.Won]: "已成交",
+  [LeadStatus.Lost]: "已流失",
+  [LeadStatus.Archived]: "已归档",
+}
+
+export enum LeadTag {
+  Quote = "quote",
+  Sample = "sample",
+  Bulk = "bulk",
+  Urgent = "urgent",
+  Contact = "contact",
+}
+export const LeadTagLabels: Record<LeadTag, string> = {
+  [LeadTag.Quote]: "询价",
+  [LeadTag.Sample]: "样品需求",
+  [LeadTag.Bulk]: "批量采购",
+  [LeadTag.Urgent]: "交期紧急",
+  [LeadTag.Contact]: "已留联系方式",
+}
+
+export enum MemoryKind {
+  Summary = "summary",
+  Inquiry = "inquiry",
+  Customer = "customer",
+  CustomerTag = "customer_tag",
+  CustomerProfile = "customer_profile",
+  OpenQuestion = "open_question",
+  NextStep = "next_step",
+}
+export const MemoryKindLabels: Record<MemoryKind, string> = {
+  [MemoryKind.Summary]: "交接概况",
+  [MemoryKind.Inquiry]: "当前需求",
+  [MemoryKind.Customer]: "客户长期信息",
+  [MemoryKind.CustomerTag]: "AI 客户标签",
+  [MemoryKind.CustomerProfile]: "AI 客户档案",
+  [MemoryKind.OpenQuestion]: "待确认问题",
+  [MemoryKind.NextStep]: "建议下一步",
+}
+
+export enum MemoryStatus {
+  Empty = "empty",
+  Queued = "queued",
+  Processing = "processing",
+  Ready = "ready",
+  Failed = "failed",
+}
+export const MemoryStatusLabels: Record<MemoryStatus, string> = {
+  [MemoryStatus.Empty]: "尚未整理",
+  [MemoryStatus.Queued]: "等待整理",
+  [MemoryStatus.Processing]: "正在分析对话",
+  [MemoryStatus.Ready]: "已整理",
+  [MemoryStatus.Failed]: "整理失败",
+}
+
 export enum ServiceStatus {
   Idle = 0,
   Busy = 1,
@@ -372,11 +455,54 @@ export const TicketStatusLabels: Record<TicketStatus, string> = {
   [TicketStatus.Done]: "已处理",
 }
 
+export enum TranslationLanguage {
+  Auto = "auto",
+  Chinese = "zh-CN",
+  TraditionalChinese = "zh-TW",
+  English = "en",
+  Spanish = "es",
+  Portuguese = "pt",
+  French = "fr",
+  German = "de",
+  Italian = "it",
+  Russian = "ru",
+  Arabic = "ar",
+  Japanese = "ja",
+  Korean = "ko",
+  Vietnamese = "vi",
+  Thai = "th",
+  Indonesian = "id",
+  Turkish = "tr",
+  Hindi = "hi",
+}
+export const TranslationLanguageLabels: Record<TranslationLanguage, string> = {
+  [TranslationLanguage.Auto]: "自动识别",
+  [TranslationLanguage.Chinese]: "简体中文",
+  [TranslationLanguage.TraditionalChinese]: "繁体中文",
+  [TranslationLanguage.English]: "English",
+  [TranslationLanguage.Spanish]: "Español",
+  [TranslationLanguage.Portuguese]: "Português",
+  [TranslationLanguage.French]: "Français",
+  [TranslationLanguage.German]: "Deutsch",
+  [TranslationLanguage.Italian]: "Italiano",
+  [TranslationLanguage.Russian]: "Русский",
+  [TranslationLanguage.Arabic]: "العربية",
+  [TranslationLanguage.Japanese]: "日本語",
+  [TranslationLanguage.Korean]: "한국어",
+  [TranslationLanguage.Vietnamese]: "Tiếng Việt",
+  [TranslationLanguage.Thai]: "ไทย",
+  [TranslationLanguage.Indonesian]: "Bahasa Indonesia",
+  [TranslationLanguage.Turkish]: "Türkçe",
+  [TranslationLanguage.Hindi]: "हिन्दी",
+}
+
 export enum VectorDBType {
   Qdrant = "qdrant",
   LanceDB = "lancedb",
+  Elasticsearch = "elasticsearch",
 }
 export const VectorDBTypeLabels: Record<VectorDBType, string> = {
   [VectorDBType.Qdrant]: "Qdrant",
   [VectorDBType.LanceDB]: "LanceDB",
+  [VectorDBType.Elasticsearch]: "Elasticsearch",
 }

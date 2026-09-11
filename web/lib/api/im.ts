@@ -62,6 +62,7 @@ export type ImConversationDetail = ImConversation
 export type ImMessage = {
   id: number
   conversationId: number
+  requestId?: string
   workflowRunId?: number
   clientMsgId?: string
   senderType: string
@@ -107,6 +108,9 @@ export type ImWidgetConfig = {
   userToken?: string
   title?: string
   subtitle?: string
+  agentName?: string
+  agentAvatar?: string
+  agentStatus?: string
   themeColor?: string
   position?: "left" | "right"
   width?: string

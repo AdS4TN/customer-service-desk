@@ -13,11 +13,13 @@ export type ImRealtimeEnvelope = {
     RealtimeConversationPatch & {
       customerSessionToken?: string
       expiresAt?: string
+      requestId?: string
     }
   payload?: RealtimeMessageCreatedPayload<ImMessage> &
     RealtimeConversationPatch & {
       customerSessionToken?: string
       expiresAt?: string
+      requestId?: string
     }
 }
 

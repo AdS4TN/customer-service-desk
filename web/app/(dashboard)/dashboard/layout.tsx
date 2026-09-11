@@ -1,7 +1,7 @@
 "use client"
 
 import { Loader2Icon } from "lucide-react"
-import { usePathname, useRouter } from "next/navigation"
+import { useRouter } from "next/navigation"
 import type { CSSProperties, ReactNode } from "react"
 import { useEffect } from "react"
 
@@ -19,19 +19,13 @@ export default function DashboardLayout({
 }) {
   const t = useI18n()
   const { ready, session } = useAuth()
-  const pathname = usePathname()
   const router = useRouter()
-  const isLoginRoute = pathname?.startsWith("/dashboard/login") ?? false
 
   useEffect(() => {
-    if (ready && !session && !isLoginRoute) {
+    if (ready && !session) {
       router.replace("/dashboard/login")
     }
-  }, [isLoginRoute, ready, router, session])
-
-  if (isLoginRoute) {
-    return <>{children}</>
-  }
+  }, [ready, router, session])
 
   if (!ready || !session) {
     return (

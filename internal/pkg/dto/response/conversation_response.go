@@ -2,6 +2,15 @@ package response
 
 import "agent-desk/internal/pkg/enums"
 
+// InboxChannelResponse deliberately excludes channel credentials and QR codes.
+type InboxChannelResponse struct {
+	ID              int64        `json:"id"`
+	Name            string       `json:"name"`
+	ChannelType     string       `json:"channelType"`
+	Status          enums.Status `json:"status"`
+	ConnectionState string       `json:"connectionState,omitempty"`
+}
+
 type ConversationTagResponse struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
@@ -18,6 +27,12 @@ type ConversationParticipantResponse struct {
 }
 
 type ConversationResponse struct {
+	WorkStatus                enums.ConversationWorkStatus    `json:"workStatus"`
+	WorkRevision              int64                           `json:"workRevision"`
+	PendingSince              string                          `json:"pendingSince,omitempty"`
+	ReplyDueAt                string                          `json:"replyDueAt,omitempty"`
+	SnoozedUntil              string                          `json:"snoozedUntil,omitempty"`
+	ReplyTargetMinutes        int                             `json:"replyTargetMinutes"`
 	ID                        int64                           `json:"id"`
 	AIAgentID                 int64                           `json:"aiAgentId"`
 	ChannelID                 int64                           `json:"channelId"`

@@ -103,7 +103,11 @@ func (s *rerank) RerankResults(ctx context.Context, query string, results []Retr
 
 	documents := make([]string, 0, len(results))
 	for _, r := range results {
-		documents = append(documents, r.Content)
+		content := r.MatchedContent
+		if content == "" {
+			content = r.Content
+		}
+		documents = append(documents, content)
 	}
 
 	rerankResults, err := s.Rerank(ctx, query, documents, topN)

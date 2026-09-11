@@ -2,6 +2,7 @@ package rag
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 )
@@ -83,7 +84,9 @@ func mergeAdjacentResults(results []RetrieveResult) []RetrieveResult {
 
 		last := &merged[len(merged)-1]
 		if canMergeContextResult(*last, item) {
-			last.Content = strings.TrimSpace(last.Content + "\n" + item.Content)
+			if last.Content != item.Content {
+				last.Content = strings.TrimSpace(last.Content + "\n" + item.Content)
+			}
 			if item.Score > last.Score {
 				last.Score = item.Score
 			}
@@ -101,6 +104,9 @@ func canMergeContextResult(left, right RetrieveResult) bool {
 	if left.DocumentID != right.DocumentID {
 		return false
 	}
+	if left.MatchedContent != "" && left.MatchedContent != left.Content {
+		return left.Content == right.Content
+	}
 	if left.SectionPath == "" || right.SectionPath == "" {
 		return false
 	}
@@ -113,6 +119,9 @@ func canMergeContextResult(left, right RetrieveResult) bool {
 func buildSectionKey(item RetrieveResult) string {
 	if item.FaqID > 0 {
 		return fmt.Sprintf("faq:%d", item.FaqID)
+	}
+	if item.MatchedContent != "" && item.MatchedContent != item.Content {
+		return fmt.Sprintf("%d|parent:%x", item.DocumentID, sha256.Sum256([]byte(item.Content)))
 	}
 	sectionPath := strings.TrimSpace(item.SectionPath)
 	if sectionPath != "" {

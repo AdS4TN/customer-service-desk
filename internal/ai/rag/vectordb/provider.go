@@ -21,6 +21,8 @@ func Init(cfg *config.VectorDBConfig) error {
 		defaultProvider, err = NewQdrantProvider(&cfg.Qdrant)
 	case enums.VectorDBTypeLanceDB:
 		defaultProvider, err = NewLanceDBProvider(&cfg.LanceDB)
+	case enums.VectorDBTypeElasticsearch:
+		defaultProvider, err = NewElasticsearchProvider(&cfg.Elasticsearch)
 	default:
 		return fmt.Errorf("unsupported vectordb type: %s", cfg.Type)
 	}
@@ -78,6 +80,20 @@ func DeleteVectors(ctx context.Context, collectionName string, ids []string) err
 		return fmt.Errorf("vectordb provider not initialized")
 	}
 	return defaultProvider.DeleteVectors(ctx, collectionName, ids)
+}
+
+func DeleteVectorsByFilter(ctx context.Context, collectionName string, filter *SearchFilter) error {
+	if defaultProvider == nil {
+		return fmt.Errorf("vectordb provider not initialized")
+	}
+	return defaultProvider.DeleteVectorsByFilter(ctx, collectionName, filter)
+}
+
+func CountVectors(ctx context.Context, collectionName string, filter *SearchFilter) (int64, error) {
+	if defaultProvider == nil {
+		return 0, fmt.Errorf("vectordb provider not initialized")
+	}
+	return defaultProvider.CountVectors(ctx, collectionName, filter)
 }
 
 func Search(ctx context.Context, req *SearchRequest) ([]SearchResult, error) {

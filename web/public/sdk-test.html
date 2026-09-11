@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AgentDesk Web 接入测试</title>
+    <style>
+      :root { color-scheme: light; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; color: #172033; background: #f5f7fb; }
+      header { height: 64px; display: flex; align-items: center; padding: 0 48px; background: #fff; border-bottom: 1px solid #e7ebf2; }
+      .brand { font-weight: 700; letter-spacing: -.02em; }
+      nav { margin-left: auto; display: flex; gap: 28px; color: #667085; font-size: 14px; }
+      main { max-width: 1120px; margin: 0 auto; padding: 88px 48px 120px; }
+      .eyebrow { color: #356ae6; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+      h1 { max-width: 680px; margin: 16px 0; font-size: clamp(38px, 6vw, 64px); line-height: 1.08; letter-spacing: -.045em; }
+      p { max-width: 560px; color: #667085; font-size: 18px; line-height: 1.7; }
+      .status { display: inline-flex; align-items: center; gap: 9px; margin-top: 26px; padding: 10px 14px; border: 1px solid #dbe4f6; border-radius: 8px; background: #fff; color: #475467; font-size: 14px; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: #22a06b; }
+      footer { padding: 24px 48px; border-top: 1px solid #e7ebf2; color: #98a2b3; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <header><div class="brand">AgentDesk</div><nav><span>产品</span><span>帮助中心</span><span>联系我们</span></nav></header>
+    <main>
+      <div class="eyebrow">Web channel preview</div>
+      <h1>让每一次咨询，都有人及时回应。</h1>
+      <p>这是一个独立的 Web 站点接入测试页。右下角的 AgentDesk 客服入口由 SDK 动态加载，用于验证渠道配置、欢迎语和真实对话。</p>
+      <div class="status"><span class="dot"></span>客服服务在线</div>
+    </main>
+    <footer>AgentDesk Web 接入测试 · channelId: 6f9a4e58dd3b4b4f982d71b06ddd9a1a</footer>
+    <script>
+      window.AgentDeskConfig = { channelId: "6f9a4e58dd3b4b4f982d71b06ddd9a1a" };
+    </script>
+    <script async src="/sdk/agent-desk-sdk.min.js"></script>
+  </body>
+</html>

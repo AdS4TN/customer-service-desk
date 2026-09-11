@@ -22,12 +22,15 @@ func ChannelAnyList(ctx *gin.Context) {
 		httpx.WriteJSON(ctx, err)
 		return
 	}
-	list, paging := services.ChannelService.FindPageByCnd(params.NewPagedSqlCnd(ctx,
+	cnd := params.NewPagedSqlCnd(ctx,
 		params.QueryFilter{ParamName: "status"},
 		params.QueryFilter{ParamName: "name", Op: params.Like},
-		params.QueryFilter{ParamName: "channelType"},
 		params.QueryFilter{ParamName: "channelId", Op: params.Like},
-	).Where("status <> ?", enums.StatusDeleted).Desc("id"))
+	).Where("status <> ?", enums.StatusDeleted).Desc("id")
+	if channelType := strings.TrimSpace(params.FormValue(ctx, "channelType")); channelType != "" {
+		cnd.In("channel_type", strings.Split(channelType, ","))
+	}
+	list, paging := services.ChannelService.FindPageByCnd(cnd)
 	results := make([]response.ChannelResponse, 0, len(list))
 	for _, item := range list {
 		results = append(results, buildChannelResponse(&item))
@@ -167,6 +170,10 @@ func ChannelPostUpdate(ctx *gin.Context) {
 		httpx.WriteJSON(ctx, err)
 		return
 	}
+	if req.Status == int(enums.StatusDisabled) {
+		services.WhatsAppService.Suspend(req.ID)
+		services.MessengerService.Suspend(req.ID)
+	}
 	httpx.WriteJSON(ctx, nil)
 }
 
@@ -202,6 +209,13 @@ func ChannelPostUpdate_status(ctx *gin.Context) {
 	if err := services.ChannelService.UpdateStatus(req.ID, req.Status, operator); err != nil {
 		httpx.WriteJSON(ctx, err)
 		return
+	}
+	if req.Status == int(enums.StatusOk) {
+		services.WhatsAppService.Resume(req.ID)
+		services.MessengerService.Resume(req.ID)
+	} else {
+		services.WhatsAppService.Suspend(req.ID)
+		services.MessengerService.Suspend(req.ID)
 	}
 	httpx.WriteJSON(ctx, nil)
 }
@@ -240,6 +254,8 @@ func ChannelPostDelete(ctx *gin.Context) {
 		httpx.WriteJSON(ctx, err)
 		return
 	}
+	services.WhatsAppService.Suspend(req.ID)
+	services.MessengerService.Suspend(req.ID)
 	httpx.WriteJSON(ctx, nil)
 }
 

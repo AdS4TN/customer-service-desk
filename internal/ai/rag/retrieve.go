@@ -145,7 +145,13 @@ func (s *retrieve) GetKnowledgeBaseStats(ctx context.Context, knowledgeBaseID in
 	}
 
 	documentCount := repositories.KnowledgeDocumentRepository.CountByKnowledgeBaseID(sqls.DB(), knowledgeBaseID)
-	chunkCount := repositories.KnowledgeChunkRepository.CountByKnowledgeBaseID(sqls.DB(), knowledgeBaseID)
+	chunkCount, err := vectordb.CountVectors(ctx, knowledgeCollectionName, &vectordb.SearchFilter{
+		KnowledgeBaseIDs: []int64{knowledgeBaseID},
+	})
+	if err != nil {
+		slog.Warn("Failed to count knowledge vectors; using legacy chunk count", "knowledge_base_id", knowledgeBaseID, "error", err)
+		chunkCount = repositories.KnowledgeChunkRepository.CountByKnowledgeBaseID(sqls.DB(), knowledgeBaseID)
+	}
 
 	publishedCount := repositories.KnowledgeDocumentRepository.Count(sqls.DB(), sqls.NewCnd().
 		Eq("knowledge_base_id", knowledgeBaseID).

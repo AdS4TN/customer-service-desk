@@ -24,7 +24,7 @@ func TestAgentRevisionServiceRestoresPublishedSnapshotAndKeepsAPIKey(t *testing.
 	sqls.SetDB(db)
 	definition := agentRevisionDefinition{
 		Agent: agentRevisionAgent{
-			Name: "published agent", AIConfigID: 8,
+			Name: "published agent", DisplayName: "Public Support", Avatar: "https://cdn.example/avatar.png", StatusText: "Online now", AIConfigID: 8,
 			MaxSteps: 5, ContextWindow: 9, SystemPrompt: "published instruction", KnowledgeIDs: "4", ReplyTimeoutSeconds: 90,
 		},
 		Model: agentRevisionModel{ConfigID: 8, Provider: string(enums.AIProviderOpenAI), BaseURL: "https://published.example/v1", ModelType: string(enums.AIModelTypeLLM), ModelName: "published-model", TimeoutMS: 12000},
@@ -44,8 +44,40 @@ func TestAgentRevisionServiceRestoresPublishedSnapshotAndKeepsAPIKey(t *testing.
 	if snapshot.Agent.SystemPrompt != "published instruction" || snapshot.Agent.MaxSteps != 5 || snapshot.Agent.ReplyTimeoutSeconds != 90 {
 		t.Fatalf("agent snapshot not restored: %#v", snapshot.Agent)
 	}
+	if snapshot.Agent.DisplayName != "Public Support" || snapshot.Agent.Avatar != "https://cdn.example/avatar.png" || snapshot.Agent.StatusText != "Online now" {
+		t.Fatalf("public agent identity not restored: %#v", snapshot.Agent)
+	}
 	if snapshot.AIConfig.ModelName != "published-model" || snapshot.AIConfig.BaseURL != "https://published.example/v1" || snapshot.AIConfig.APIKey != "rotated-secret" {
 		t.Fatalf("model snapshot not restored safely: %#v", snapshot.AIConfig)
+	}
+}
+
+func TestAgentRevisionServicePublicIdentityUsesPublishedRevision(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&models.AgentRevision{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+	sqls.SetDB(db)
+	definition := agentRevisionDefinition{Agent: agentRevisionAgent{
+		Name: "published internal", DisplayName: "Published Support", Avatar: "/uploads/published.png", StatusText: "Replies in minutes",
+	}}
+	data, err := json.Marshal(definition)
+	if err != nil {
+		t.Fatalf("marshal definition: %v", err)
+	}
+	revision := &models.AgentRevision{AgentID: 9, Revision: 1, Status: enums.StatusOk, Definition: string(data)}
+	if err := db.Create(revision).Error; err != nil {
+		t.Fatalf("create revision: %v", err)
+	}
+
+	resolved := AgentRevisionService.ResolvePublishedAgent(models.AIAgent{
+		ID: 9, Name: "draft internal", DisplayName: "Draft Support", Avatar: "/uploads/draft.png", StatusText: "Draft status", PublishedRevisionID: revision.ID,
+	})
+	if resolved.DisplayName != "Published Support" || resolved.Avatar != "/uploads/published.png" || resolved.StatusText != "Replies in minutes" {
+		t.Fatalf("resolved public identity = %#v", resolved)
 	}
 }
 

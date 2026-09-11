@@ -20,6 +20,12 @@ func BuildConversation(item *models.Conversation) response.ConversationResponse 
 func BuildConversationWithLocale(item *models.Conversation, locale string) response.ConversationResponse {
 	agentReadState, customerReadState := services.ConversationReadStateService.GetConversationReadStates(item.ID)
 	ret := response.ConversationResponse{
+		WorkStatus:                item.WorkStatus,
+		WorkRevision:              item.WorkRevision,
+		PendingSince:              utils.FormatTimePtr(item.PendingSince),
+		ReplyDueAt:                utils.FormatTimePtr(item.ReplyDueAt),
+		SnoozedUntil:              utils.FormatTimePtr(item.SnoozedUntil),
+		ReplyTargetMinutes:        item.ReplyTargetMinutes,
 		ID:                        item.ID,
 		AIAgentID:                 item.AIAgentID,
 		ChannelID:                 item.ChannelID,
@@ -120,11 +126,11 @@ func BuildMessagesWithLocale(list []models.Message, locale string) []response.Me
 		return nil
 	}
 	agentReadState, customerReadState := services.ConversationReadStateService.GetConversationReadStates(list[0].ConversationID)
-	aiSenderNames, userSenderNames := collectMessageSenderNameMaps(list)
+	aiSenderNames, aiSenderAvatars, userSenderNames := collectMessageSenderNameMaps(list)
 	agentProfiles := collectAgentProfilesByMessages(list)
 	ret := make([]response.MessageResponse, 0, len(list))
 	for i := range list {
-		ret = append(ret, BuildMessageWithReadStatesAndLocale(&list[i], agentReadState, customerReadState, aiSenderNames, userSenderNames, agentProfiles, locale))
+		ret = append(ret, buildMessageWithReadStatesAndLocale(&list[i], agentReadState, customerReadState, aiSenderNames, aiSenderAvatars, userSenderNames, agentProfiles, locale))
 	}
 	return ret
 }
@@ -139,10 +145,14 @@ func BuildMessageWithLocale(item *models.Message, locale string) response.Messag
 }
 
 func BuildMessageWithReadStates(item *models.Message, agentReadState, customerReadState *models.ConversationReadState, aiSenderNames, userSenderNames map[int64]string, agentProfiles map[int64]*models.AgentProfile) response.MessageResponse {
-	return BuildMessageWithReadStatesAndLocale(item, agentReadState, customerReadState, aiSenderNames, userSenderNames, agentProfiles, i18nx.DefaultLocale)
+	return buildMessageWithReadStatesAndLocale(item, agentReadState, customerReadState, aiSenderNames, nil, userSenderNames, agentProfiles, i18nx.DefaultLocale)
 }
 
 func BuildMessageWithReadStatesAndLocale(item *models.Message, agentReadState, customerReadState *models.ConversationReadState, aiSenderNames, userSenderNames map[int64]string, agentProfiles map[int64]*models.AgentProfile, locale string) response.MessageResponse {
+	return buildMessageWithReadStatesAndLocale(item, agentReadState, customerReadState, aiSenderNames, nil, userSenderNames, agentProfiles, locale)
+}
+
+func buildMessageWithReadStatesAndLocale(item *models.Message, agentReadState, customerReadState *models.ConversationReadState, aiSenderNames, aiSenderAvatars, userSenderNames map[int64]string, agentProfiles map[int64]*models.AgentProfile, locale string) response.MessageResponse {
 	content, payload := utils.BuildRenderableMessage(item)
 	ret := response.MessageResponse{
 		ID:              item.ID,
@@ -170,8 +180,17 @@ func BuildMessageWithReadStatesAndLocale(item *models.Message, agentReadState, c
 		if item.SenderType == enums.IMSenderTypeAI {
 			if aiSenderNames != nil {
 				ret.SenderName = aiSenderNames[item.SenderID]
+			}
+			if aiSenderAvatars != nil {
+				ret.SenderAvatar = aiSenderAvatars[item.SenderID]
 			} else if aiAgent := services.AIAgentService.Get(item.SenderID); aiAgent != nil {
-				ret.SenderName = aiAgent.Name
+				publishedAgent := services.AgentRevisionService.ResolvePublishedAgent(*aiAgent)
+				if displayName := strings.TrimSpace(publishedAgent.DisplayName); displayName != "" {
+					ret.SenderName = displayName
+				} else if ret.SenderName == "" {
+					ret.SenderName = publishedAgent.Name
+				}
+				ret.SenderAvatar = strings.TrimSpace(publishedAgent.Avatar)
 			}
 		} else if item.SenderType == enums.IMSenderTypeAgent {
 			profile := agentProfiles[item.SenderID]
@@ -240,8 +259,9 @@ func collectAgentProfilesByMessages(list []models.Message) map[int64]*models.Age
 	return out
 }
 
-func collectMessageSenderNameMaps(list []models.Message) (aiNames map[int64]string, userNames map[int64]string) {
+func collectMessageSenderNameMaps(list []models.Message) (aiNames map[int64]string, aiAvatars map[int64]string, userNames map[int64]string) {
 	aiNames = make(map[int64]string)
+	aiAvatars = make(map[int64]string)
 	userNames = make(map[int64]string)
 	var aiIDs, userIDs []int64
 	seenAI := make(map[int64]struct{})
@@ -266,7 +286,12 @@ func collectMessageSenderNameMaps(list []models.Message) (aiNames map[int64]stri
 		userIDs = append(userIDs, m.SenderID)
 	}
 	for _, a := range services.AIAgentService.FindByIds(aiIDs) {
-		aiNames[a.ID] = a.Name
+		publishedAgent := services.AgentRevisionService.ResolvePublishedAgent(a)
+		aiNames[a.ID] = strings.TrimSpace(publishedAgent.DisplayName)
+		if aiNames[a.ID] == "" {
+			aiNames[a.ID] = publishedAgent.Name
+		}
+		aiAvatars[a.ID] = strings.TrimSpace(publishedAgent.Avatar)
 	}
 	for _, u := range services.UserService.FindByIds(userIDs) {
 		name := u.Nickname
@@ -275,7 +300,7 @@ func collectMessageSenderNameMaps(list []models.Message) (aiNames map[int64]stri
 		}
 		userNames[u.ID] = name
 	}
-	return aiNames, userNames
+	return aiNames, aiAvatars, userNames
 }
 
 func isMessageRead(item *models.Message, state *models.ConversationReadState) bool {
