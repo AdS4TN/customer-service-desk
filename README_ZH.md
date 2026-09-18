@@ -215,8 +215,6 @@ pnpm lint
 
 ## 上游来源与许可证
 
-本仓库基于 [huabeitech/agent-desk](https://github.com/huabeitech/agent-desk) 开发。当前的多渠道销售链路、销售经验提炼、AI 辅助、自动化及相关产品改动维护在：
-
-- [shenzhen-unique-armor/customer-service-desk](https://gitee.com/shenzhen-unique-armor/customer-service-desk)
+本仓库基于 [huabeitech/agent-desk](https://github.com/huabeitech/agent-desk) 开发。
 
 项目采用 [Apache License 2.0](LICENSE)。第三方组件和渠道协议库分别遵循各自的许可证及平台条款。

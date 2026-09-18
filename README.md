@@ -215,8 +215,6 @@ Some scripts in `web/*.browser.mjs` require Playwright and a built `web/out` dir
 
 ## Upstream and License
 
-This repository is derived from [huabeitech/agent-desk](https://github.com/huabeitech/agent-desk). The multichannel sales workflows, sales-experience extraction, AI assistance, automation, and related product changes are maintained at:
-
-- [shenzhen-unique-armor/customer-service-desk](https://gitee.com/shenzhen-unique-armor/customer-service-desk)
+This repository is derived from [huabeitech/agent-desk](https://github.com/huabeitech/agent-desk).
 
 The project is distributed under the [Apache License 2.0](LICENSE). Third-party components and channel libraries retain their own licenses and platform terms.
