@@ -7,6 +7,7 @@ import (
 
 	"agent-desk/internal/models"
 	"agent-desk/internal/pkg/enums"
+	"agent-desk/internal/pkg/reception"
 
 	"github.com/mlogclub/simple/common/strs"
 )
@@ -48,6 +49,9 @@ func normalizedRolloutPercent(percent int) int {
 }
 
 func (e *replyEligibility) CanReply(conversation models.Conversation, message models.Message, aiAgent models.AIAgent) bool {
+	if conversation.DelegationManaged {
+		return false
+	}
 	if message.SenderType != enums.IMSenderTypeCustomer {
 		return false
 	}
@@ -60,7 +64,7 @@ func (e *replyEligibility) CanReply(conversation models.Conversation, message mo
 	if conversation.HandoffAt != nil || conversation.CurrentAssigneeID > 0 {
 		return false
 	}
-	if aiAgent.ServiceMode == enums.IMConversationServiceModeHumanOnly {
+	if !reception.AutomaticMessagesAllowed(&conversation, &aiAgent) {
 		return false
 	}
 	if strs.IsBlank(message.Content) {

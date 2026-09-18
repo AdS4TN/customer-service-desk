@@ -23,7 +23,7 @@ func setupMemoryTest(t *testing.T) (*gorm.DB, models.Conversation, models.Messag
 	if err := db.AutoMigrate(&models.ConversationMemory{}, &models.ConversationMemoryEntry{}, &models.AIConfig{}, &models.SalesLead{}, &models.SalesLeadEvent{}); err != nil {
 		t.Fatal(err)
 	}
-	config := models.AIConfig{Status: enums.StatusOk, ModelName: "test"}
+	config := models.AIConfig{Status: enums.StatusOk, ModelType: enums.AIModelTypeLLM, ModelName: "test"}
 	if err := db.Create(&config).Error; err != nil {
 		t.Fatal(err)
 	}

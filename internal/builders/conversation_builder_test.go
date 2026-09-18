@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"agent-desk/internal/models"
 	"agent-desk/internal/pkg/enums"
@@ -119,6 +120,23 @@ func TestBuildMessageIncludesWorkflowRunID(t *testing.T) {
 
 	if resp.WorkflowRunID != 9988 {
 		t.Fatalf("resp.WorkflowRunID=%d want 9988", resp.WorkflowRunID)
+	}
+}
+
+func TestBuildMessageIncludesRecallDeadline(t *testing.T) {
+	sentAt := time.Date(2026, time.September, 16, 12, 0, 0, 0, time.UTC)
+	resp := BuildMessageWithReadStatesAndLocale(&models.Message{
+		ID:             1,
+		ConversationID: 2,
+		SenderType:     enums.IMSenderTypeCustomer,
+		MessageType:    enums.IMMessageTypeText,
+		Content:        "hello",
+		SentAt:         &sentAt,
+	}, nil, nil, nil, nil, nil, i18nx.DefaultLocale)
+
+	want := sentAt.Add(2 * time.Minute).Format(time.RFC3339Nano)
+	if resp.RecallableUntil != want {
+		t.Fatalf("resp.RecallableUntil=%q want %q", resp.RecallableUntil, want)
 	}
 }
 

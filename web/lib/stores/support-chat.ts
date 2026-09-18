@@ -9,6 +9,7 @@ import {
   fetchImMessages,
   fetchImWidgetConfig,
   markImMessageRead,
+  recallImMessage,
   sendImMessage,
   uploadImAttachment,
   uploadImImage,
@@ -149,6 +150,7 @@ export type SupportChatStore = {
   isVisible: boolean
   socket: WebSocket | null
   readingMessageId: number
+  recallingMessageId: number
 
   setIsOpen: (isOpen: boolean) => void
   setIsVisible: (isVisible: boolean) => void
@@ -158,6 +160,7 @@ export type SupportChatStore = {
   syncLatestMessages: () => Promise<void>
   loadOlderMessages: () => Promise<void>
   markConversationRead: () => Promise<void>
+  recallMessage: (messageId: number) => Promise<ImMessage | null>
   handleSendMessage: (content: string) => Promise<void>
   sendMessage: (content: string) => Promise<void>
   uploadMessageImage: (file: File) => Promise<ImAsset | null>
@@ -277,6 +280,21 @@ export const useSupportChatStore = create<SupportChatStore>((set, get) => {
         return
       }
 
+      if (event.type === "message.recalled" && payload?.messageId) {
+        set((state) => ({
+          messages: state.messages.map((message) =>
+            message.id === payload.messageId
+              ? {
+                  ...message,
+                  sendStatus: payload.sendStatus ?? 6,
+                  recalledAt: payload.recalledAt,
+                }
+              : message
+          ),
+        }))
+        return
+      }
+
       if (event.type?.startsWith("conversation.")) {
         set((state) => ({
           conversation: patchConversation(state.conversation, payload),
@@ -322,6 +340,7 @@ export const useSupportChatStore = create<SupportChatStore>((set, get) => {
       typeof window !== "undefined" ? window.self === window.top : false,
     socket: null,
     readingMessageId: 0,
+    recallingMessageId: 0,
 
     setIsOpen: (isOpen: boolean) => {
       set({ isOpen })
@@ -653,6 +672,28 @@ export const useSupportChatStore = create<SupportChatStore>((set, get) => {
           error: error instanceof Error ? error.message : t("supportChat.sendAttachmentFailed"),
         })
         throw error
+      }
+    },
+
+    recallMessage: async (messageId: number) => {
+      if (messageId <= 0 || get().recallingMessageId === messageId) return null
+
+      set({ error: "", recallingMessageId: messageId })
+      try {
+        const recalled = await recallImMessage(messageId)
+        set((state) => ({
+          recallingMessageId: 0,
+          messages: state.messages.map((message) =>
+            message.id === recalled.id ? recalled : message
+          ),
+        }))
+        return recalled
+      } catch (error) {
+        set({
+          recallingMessageId: 0,
+          error: error instanceof Error ? error.message : t("supportChat.recallFailed"),
+        })
+        return null
       }
     },
 

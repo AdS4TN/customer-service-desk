@@ -65,7 +65,7 @@ export function ConversationList({ onAfterSelect }: ConversationListProps) {
               <div className="overflow-hidden">
                 <div className="flex items-center gap-2">
                   <Avatar className="size-7 shrink-0">
-                    <AvatarImage src="" />
+              <AvatarImage src={conversation.customerAvatar} alt={conversation.customerName} />
                     <AvatarFallback className="bg-primary/10 text-primary">
                       <UserIcon className="size-3.5 text-primary" />
                     </AvatarFallback>

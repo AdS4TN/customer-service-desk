@@ -209,6 +209,8 @@ func (e RealtimeMessageRecalledEvent) EventPayload() RealtimeEventPayload {
 }
 
 type RealtimeConversationChangedPayload struct {
+	CustomerName              *string                         `json:"customerName,omitempty"`
+	CustomerAvatar            *string                         `json:"customerAvatar,omitempty"`
 	WorkStatus                enums.ConversationWorkStatus    `json:"workStatus"`
 	WorkRevision              int64                           `json:"workRevision"`
 	PendingSince              string                          `json:"pendingSince"`

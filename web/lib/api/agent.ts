@@ -53,6 +53,7 @@ export type AgentConversationParticipant = {
 }
 
 export type AgentConversation = {
+  customerAvatar?: string
 	workStatus?: ConversationWorkStatus
 	workRevision?: number
 	pendingSince?: string
@@ -112,6 +113,7 @@ export type AgentMessage = {
   agentRead: boolean
   agentReadAt?: string
   recalledAt?: string
+  recallableUntil?: string
   quotedMessageId?: number
 }
 

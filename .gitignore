@@ -20,6 +20,18 @@ node_modules/
 
 .superpowers
 
+# Local runtime and development-tool artifacts
+.aoci/
+.impeccable/review/
+__pycache__/
+logs/
+*.pyc
+AGENTS.md.backup.*
+aoci.code.txt
+aoci.meta.txt
+aoci.txt
+config/mineru.json
+
 agent-desk
 
 test-reports

@@ -34,6 +34,11 @@ func UpdateWhatsAppImportedSummary(db *gorm.DB, conversationID int64, message *m
 			"last_active_at": message.SentAt, "last_message_summary": summary}).Error
 }
 
+func UpdateLinkedMessageSummary(db *gorm.DB, message *models.Message, summary string) error {
+	return db.Model(&models.Conversation{}).Where("id = ? AND last_message_id = ?", message.ConversationID, message.ID).
+		Update("last_message_summary", summary).Error
+}
+
 // An ID still identifies the cursor, but ordering follows the original send time.
 func FindWhatsAppMessagesBefore(db *gorm.DB, conversationID, cursor int64, limit int, senderType, messageType string) []models.Message {
 	query := db.Where("conversation_id = ?", conversationID)

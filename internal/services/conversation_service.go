@@ -39,7 +39,13 @@ func (s *conversationService) Get(id int64) *models.Conversation {
 	if id <= 0 {
 		return nil
 	}
-	return repositories.ConversationRepository.Get(sqls.DB(), id)
+	item := repositories.ConversationRepository.Get(sqls.DB(), id)
+	if item != nil {
+		list := []models.Conversation{*item}
+		enrichConversationAvatars(list)
+		item.CustomerAvatar = list[0].CustomerAvatar
+	}
+	return item
 }
 
 func (s *conversationService) Find(cnd *sqls.Cnd) []models.Conversation {
@@ -51,7 +57,9 @@ func (s *conversationService) FindOne(cnd *sqls.Cnd) *models.Conversation {
 }
 
 func (s *conversationService) FindPageByCnd(cnd *sqls.Cnd) (list []models.Conversation, paging *sqls.Paging) {
-	return repositories.ConversationRepository.FindPageByCnd(sqls.DB(), cnd)
+	list, paging = repositories.ConversationRepository.FindPageByCnd(sqls.DB(), cnd)
+	enrichConversationAvatars(list)
+	return
 }
 
 func (s *conversationService) ListConversations(userID int64, filter request.AgentConversationFilter, keyword string, paging *sqls.Paging, options ...request.InboxFilter) ([]models.Conversation, *sqls.Paging, error) {
@@ -108,6 +116,7 @@ func (s *conversationService) ListConversations(userID int64, filter request.Age
 	}
 
 	list, paging := repositories.ConversationRepository.FindPageByCnd(sqls.DB(), cnd)
+	enrichConversationAvatars(list)
 	return list, paging, nil
 }
 
@@ -132,8 +141,13 @@ func (s *conversationService) getLatestNotFinishedByCustomerID(db *gorm.DB, cust
 
 func (s *conversationService) Create(externalUser openidentity.ExternalUser, channelID, aiAgentID int64) (*models.Conversation, error) {
 	aiAgent := AIAgentService.Get(aiAgentID)
-	if aiAgent == nil || aiAgent.Status != enums.StatusOk {
+	if aiAgent == nil || aiAgent.Status == enums.StatusDeleted {
 		return nil, errorsx.InvalidParamI18n("error.e0002")
+	}
+	published := AgentRevisionService.ResolvePublishedAgent(*aiAgent)
+	aiAgent = &published
+	if aiAgent.Status == enums.StatusDisabled {
+		aiAgent.ServiceMode = enums.IMConversationServiceModeHumanOnly
 	}
 
 	var conversation *models.Conversation
@@ -237,6 +251,9 @@ func (s *conversationService) AssignConversation(req request.AssignConversationR
 		if err := ConversationAssignmentService.CreateAssignment(ctx, req.ConversationID, conversation.CurrentAssigneeID, req.AssigneeID, enums.IMAssignmentTypeAssign, req.Reason, operator, now); err != nil {
 			return err
 		}
+		if err := repositories.SetInitialCustomerOwner(ctx.Tx, conversation.CustomerID, req.AssigneeID); err != nil {
+			return err
+		}
 		if err := repositories.AssignInboxConversation(ctx.Tx, conversation, map[string]any{
 			"current_assignee_id": req.AssigneeID,
 			"status":              enums.IMConversationStatusActive,
@@ -308,6 +325,8 @@ func (s *conversationService) AutoAssignConversation(conversationID int64, opera
 }
 
 func (s *conversationService) TransferConversation(conversationID, toUserID int64, reason string, operator *dto.AuthPrincipal) error {
+	unlock := ConversationDelegationService.lockDelivery(conversationID)
+	defer unlock()
 	if operator == nil {
 		return errorsx.UnauthorizedI18n("error.auth.expired")
 	}
@@ -335,6 +354,12 @@ func (s *conversationService) TransferConversation(conversationID, toUserID int6
 		}
 		if conversation.CurrentAssigneeID == toUserID {
 			return errorsx.InvalidParamI18n("error.e0277")
+		}
+		if err := ConversationDelegationService.stopForConversationTx(ctx, conversation, "transferred", operator.UserID); err != nil {
+			return err
+		}
+		if err := repositories.SetInitialCustomerOwner(ctx.Tx, conversation.CustomerID, conversation.CurrentAssigneeID); err != nil {
+			return err
 		}
 		now := time.Now()
 		if err := ConversationAssignmentService.FinishActiveAssignments(ctx, conversationID, now); err != nil {
@@ -437,6 +462,8 @@ func (s *conversationService) CloseCustomerConversation(conversationID int64, ex
 }
 
 func (s *conversationService) closeConversation(conversationID int64, senderType enums.IMSenderType, closeReason string, operator *dto.AuthPrincipal) error {
+	unlock := ConversationDelegationService.lockDelivery(conversationID)
+	defer unlock()
 	if err := sqls.WithTransaction(func(ctx *sqls.TxContext) error {
 		conversation := repositories.ConversationRepository.Get(ctx.Tx, conversationID)
 		if conversation == nil {
@@ -473,6 +500,9 @@ func (s *conversationService) closeConversation(conversationID int64, senderType
 			operatorName = operator.Nickname
 		}
 		if err := ConversationAssignmentService.FinishActiveAssignments(ctx, conversationID, now); err != nil {
+			return err
+		}
+		if err := ConversationDelegationService.stopForConversationTx(ctx, conversation, "closed", operatorID); err != nil {
 			return err
 		}
 		if err := repositories.ConversationRepository.Updates(ctx.Tx, conversationID, map[string]any{
@@ -774,6 +804,8 @@ func (s *conversationService) buildEventPayload(payload map[string]any) string {
 
 // LinkConversationCustomer 将会话绑定到指定客户。
 func (s *conversationService) LinkConversationCustomer(conversationID, customerID int64, operator *dto.AuthPrincipal) error {
+	unlock := ConversationDelegationService.lockDelivery(conversationID)
+	defer unlock()
 	if operator == nil {
 		return errorsx.UnauthorizedI18n("error.auth.expired")
 	}
@@ -799,6 +831,9 @@ func (s *conversationService) LinkConversationCustomer(conversationID, customerI
 		current := repositories.ConversationRepository.Get(ctx.Tx, conversationID)
 		if current == nil {
 			return errorsx.InvalidParamI18n("error.e0116")
+		}
+		if err := ConversationDelegationService.stopForConversationTx(ctx, current, "conversation_changed", operator.UserID); err != nil {
+			return err
 		}
 		now := time.Now()
 		if err := repositories.ConversationRepository.Updates(ctx.Tx, conversationID, map[string]any{

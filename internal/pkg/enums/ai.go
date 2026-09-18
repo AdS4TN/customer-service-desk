@@ -17,15 +17,17 @@ func GetAIProviderLabel(provider AIProvider) string {
 type AIModelType string
 
 const (
-	AIModelTypeLLM       AIModelType = "llm"
-	AIModelTypeEmbedding AIModelType = "embedding"
-	AIModelTypeRerank    AIModelType = "rerank"
+	AIModelTypeLLM         AIModelType = "llm"
+	AIModelTypeTranslation AIModelType = "translation"
+	AIModelTypeEmbedding   AIModelType = "embedding"
+	AIModelTypeRerank      AIModelType = "rerank"
 )
 
 var aiModelTypeLabelMap = map[AIModelType]string{
-	AIModelTypeLLM:       "大语言模型",
-	AIModelTypeEmbedding: "向量模型",
-	AIModelTypeRerank:    "重排序模型",
+	AIModelTypeLLM:         "大语言模型",
+	AIModelTypeTranslation: "翻译模型",
+	AIModelTypeEmbedding:   "向量模型",
+	AIModelTypeRerank:      "重排序模型",
 }
 
 func GetAIModelTypeLabel(modelType AIModelType) string {

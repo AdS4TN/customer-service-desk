@@ -9,6 +9,7 @@ import {
 import { ProjectDialog } from "@/components/project-dialog"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n/provider"
+import { useConfirm } from "@/components/confirm-provider"
 
 export type CustomerFormDialogProps = {
   open: boolean
@@ -49,11 +50,18 @@ function CustomerFormDialogBody({
   const t = useI18n()
   const formId = "customer-form-dialog"
   const [loadingDetail, setLoadingDetail] = useState(() => Boolean(itemId))
+  const [dirty, setDirty] = useState(false)
+  const confirm = useConfirm()
+  async function close() {
+    if (saving) return
+    if (dirty && !await confirm({ title: t("customerForm.discardTitle"), description: t("customerForm.discardDescription") })) return
+    onOpenChange(false)
+  }
 
   return (
     <ProjectDialog
       open
-      onOpenChange={(next) => onOpenChange(next)}
+      onOpenChange={(next) => { if (!next) void close() }}
       title={itemId ? t("customerForm.editTitle") : t("customerForm.createTitle")}
       allowFullscreen
       size="xl"
@@ -62,7 +70,7 @@ function CustomerFormDialogBody({
           <Button
             type="button"
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => void close()}
             disabled={saving}
           >
             {t("customerForm.cancel")}
@@ -84,6 +92,7 @@ function CustomerFormDialogBody({
         fieldIdPrefix="customer"
         className="space-y-4"
         onLoadingDetailChange={setLoadingDetail}
+        onDirtyChange={setDirty}
       />
     </ProjectDialog>
   )

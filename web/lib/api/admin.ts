@@ -167,6 +167,7 @@ export type AdminMessage = {
   agentRead: boolean
   agentReadAt?: string
   recalledAt?: string
+  recallableUntil?: string
   quotedMessageId?: number
 }
 
@@ -248,6 +249,8 @@ export type AIAgent = {
   statusName: string
   aiConfigId: number
   aiConfigName?: string
+	translationAiConfigId: number
+	translationAiConfigName?: string
 	maxSteps: number
 	contextWindow: number
 	toolPolicy: string
@@ -295,6 +298,7 @@ export type CreateAIAgentPayload = {
   statusText: string
   description: string
   aiConfigId: number
+	translationAiConfigId: number
 	maxSteps?: number
 	contextWindow?: number
 	toolPolicy?: string
@@ -345,6 +349,7 @@ export type AIAgentWorkflowBindingInput = {
 
 export type UpdateAIAgentPayload = CreateAIAgentPayload & {
   id: number
+  capabilitiesOnly?: boolean
 }
 
 export type AgentRevision = {

@@ -248,6 +248,7 @@ func buildAIAgentResponseWithLocale(item *models.AIAgent, locale string) respons
 		Status:                 item.Status,
 		StatusName:             enums.GetStatusLabel(item.Status),
 		AIConfigID:             item.AIConfigID,
+		TranslationAIConfigID:  item.TranslationAIConfigID,
 		MaxSteps:               item.MaxSteps,
 		ContextWindow:          item.ContextWindow,
 		ToolPolicy:             item.ToolPolicy,
@@ -280,6 +281,9 @@ func buildAIAgentResponseWithLocale(item *models.AIAgent, locale string) respons
 	}
 	if aiConfig := services.AIConfigService.Get(item.AIConfigID); aiConfig != nil {
 		ret.AIConfigName = aiConfig.Name
+	}
+	if translationConfig := services.AIConfigService.Get(item.TranslationAIConfigID); translationConfig != nil {
+		ret.TranslationAIConfigName = translationConfig.Name
 	}
 	for _, id := range utils.SplitInt64s(item.TeamIDs) {
 		if team := services.AgentTeamService.Get(id); team != nil {

@@ -361,6 +361,12 @@ func (s *wsService) buildRealtimeMessage(item *models.Message) response.MessageR
 		RecalledAt:      utils.FormatTimePtr(item.RecalledAt),
 		QuotedMessageID: item.QuotedMessageID,
 	}
+	if item.RecalledAt == nil && item.SendStatus != enums.IMMessageStatusRecalled &&
+		(item.SenderType == enums.IMSenderTypeAgent || item.SenderType == enums.IMSenderTypeCustomer) {
+		if deadline := MessageRecallDeadline(item); deadline != nil {
+			ret.RecallableUntil = deadline.Format(time.RFC3339Nano)
+		}
+	}
 	s.fillRealtimeMessageSender(&ret, item)
 	return ret
 }
@@ -432,15 +438,20 @@ func (s *wsService) PublishMessageRecalled(conversation *models.Conversation, me
 	s.PublishToTopics(s.routeConversationTopics(conversation), event)
 }
 
-func (s *wsService) PublishConversationChanged(conversation *models.Conversation, eventType string) {
+func (s *wsService) PublishConversationChanged(conversation *models.Conversation, eventType string, customers ...*models.Customer) {
 	if conversation == nil {
 		return
 	}
 	agentReadState, customerReadState := ConversationReadStateService.GetConversationReadStates(conversation.ID)
+	var customerName, customerAvatar *string
+	if len(customers) > 0 && customers[0] != nil {
+		customerName, customerAvatar = &customers[0].Name, &customers[0].Avatar
+	}
 
 	event := s.newEvent(s.conversationTopic(conversation.ID), RealtimeConversationChangedEvent{
 		Type: eventType,
 		Payload: RealtimeConversationChangedPayload{
+			CustomerName: customerName, CustomerAvatar: customerAvatar,
 			WorkStatus:                conversation.WorkStatus,
 			WorkRevision:              conversation.WorkRevision,
 			PendingSince:              formatWsTime(conversation.PendingSince),

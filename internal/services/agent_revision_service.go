@@ -40,6 +40,7 @@ func (s *agentRevisionService) FindByAgentID(agentID int64) []models.AgentRevisi
 type agentRevisionDefinition struct {
 	Agent            agentRevisionAgent             `json:"agent"`
 	Model            agentRevisionModel             `json:"model"`
+	TranslationModel agentRevisionModel             `json:"translationModel,omitempty"`
 	WorkflowBindings []AgentRevisionWorkflowBinding `json:"workflowBindings"`
 }
 
@@ -66,38 +67,40 @@ type agentRevisionModel struct {
 }
 
 type agentRevisionAgent struct {
-	Name                string `json:"name"`
-	DisplayName         string `json:"displayName"`
-	Avatar              string `json:"avatar"`
-	StatusText          string `json:"statusText"`
-	Description         string `json:"description"`
-	AIConfigID          int64  `json:"aiConfigId"`
-	MaxSteps            int    `json:"maxSteps"`
-	ContextWindow       int    `json:"contextWindow"`
-	ToolPolicy          string `json:"toolPolicy"`
-	KnowledgePolicy     string `json:"knowledgePolicy"`
-	ServiceMode         int    `json:"serviceMode"`
-	SystemPrompt        string `json:"systemPrompt"`
-	ReceptionPolicy     string `json:"receptionPolicy"`
-	WelcomeMessage      string `json:"welcomeMessage"`
-	ReplyTimeoutSeconds int    `json:"replyTimeoutSeconds"`
-	TeamIDs             string `json:"teamIds"`
-	HandoffMode         int    `json:"handoffMode"`
-	FallbackMode        int    `json:"fallbackMode"`
-	FallbackMessage     string `json:"fallbackMessage"`
-	KnowledgeIDs        string `json:"knowledgeIds"`
-	SkillIDs            string `json:"skillIds"`
-	AllowedMCPTools     string `json:"allowedMcpTools"`
+	Name                  string `json:"name"`
+	DisplayName           string `json:"displayName"`
+	Avatar                string `json:"avatar"`
+	StatusText            string `json:"statusText"`
+	Description           string `json:"description"`
+	AIConfigID            int64  `json:"aiConfigId"`
+	TranslationAIConfigID int64  `json:"translationAiConfigId,omitempty"`
+	MaxSteps              int    `json:"maxSteps"`
+	ContextWindow         int    `json:"contextWindow"`
+	ToolPolicy            string `json:"toolPolicy"`
+	KnowledgePolicy       string `json:"knowledgePolicy"`
+	ServiceMode           int    `json:"serviceMode"`
+	SystemPrompt          string `json:"systemPrompt"`
+	ReceptionPolicy       string `json:"receptionPolicy"`
+	WelcomeMessage        string `json:"welcomeMessage"`
+	ReplyTimeoutSeconds   int    `json:"replyTimeoutSeconds"`
+	TeamIDs               string `json:"teamIds"`
+	HandoffMode           int    `json:"handoffMode"`
+	FallbackMode          int    `json:"fallbackMode"`
+	FallbackMessage       string `json:"fallbackMessage"`
+	KnowledgeIDs          string `json:"knowledgeIds"`
+	SkillIDs              string `json:"skillIds"`
+	AllowedMCPTools       string `json:"allowedMcpTools"`
 }
 
 // AgentRevisionSnapshot is the immutable runtime configuration restored from
 // a published revision. Model credentials deliberately remain on the current
 // AIConfig so credential rotation does not require republishing every Agent.
 type AgentRevisionSnapshot struct {
-	Revision         models.AgentRevision
-	Agent            models.AIAgent
-	AIConfig         models.AIConfig
-	WorkflowBindings []AgentRevisionWorkflowBinding
+	Revision            models.AgentRevision
+	Agent               models.AIAgent
+	AIConfig            models.AIConfig
+	TranslationAIConfig models.AIConfig
+	WorkflowBindings    []AgentRevisionWorkflowBinding
 }
 
 // ResolvePublishedAgent restores the published public Agent fields. It falls
@@ -150,6 +153,20 @@ func (s *agentRevisionService) ResolvePublishedSnapshot(agent models.AIAgent, co
 	applyRevisionAgentSnapshot(&snapshot.Agent, definition.Agent)
 	snapshot.WorkflowBindings = append([]AgentRevisionWorkflowBinding(nil), definition.WorkflowBindings...)
 	applyRevisionModelSnapshot(&snapshot.AIConfig, definition.Model)
+	snapshot.TranslationAIConfig = snapshot.AIConfig
+	translationConfigID := definition.Agent.TranslationAIConfigID
+	if translationConfigID <= 0 {
+		translationConfigID = definition.TranslationModel.ConfigID
+	}
+	if translationConfigID > 0 {
+		translationConfig := repositories.AIConfigRepository.Get(sqls.DB(), translationConfigID)
+		if translationConfig != nil && translationConfig.ModelType == enums.AIModelTypeTranslation {
+			snapshot.TranslationAIConfig = *translationConfig
+			applyRevisionModelSnapshot(&snapshot.TranslationAIConfig, definition.TranslationModel)
+		} else {
+			snapshot.TranslationAIConfig = models.AIConfig{}
+		}
+	}
 	return snapshot, nil
 }
 
@@ -163,11 +180,13 @@ func applyRevisionAgentSnapshot(agent *models.AIAgent, definition agentRevisionA
 	agent.StatusText = definition.StatusText
 	agent.Description = definition.Description
 	agent.AIConfigID = definition.AIConfigID
+	agent.TranslationAIConfigID = definition.TranslationAIConfigID
 	agent.MaxSteps = definition.MaxSteps
 	agent.ContextWindow = definition.ContextWindow
 	agent.ToolPolicy = definition.ToolPolicy
 	agent.KnowledgePolicy = definition.KnowledgePolicy
-	agent.ServiceMode = enums.IMConversationServiceMode(definition.ServiceMode)
+	// ServiceMode and Status are live operational settings. Publishing or
+	// rolling back a capability must never restore an old automatic-send mode.
 	agent.SystemPrompt = definition.SystemPrompt
 	agent.ReceptionPolicy = definition.ReceptionPolicy
 	agent.WelcomeMessage = definition.WelcomeMessage
@@ -200,18 +219,15 @@ func (s *agentRevisionService) PublishSnapshot(db *gorm.DB, agent *models.AIAgen
 }
 
 func (s *agentRevisionService) publishSnapshot(db *gorm.DB, agent *models.AIAgent, operator *dto.AuthPrincipal) (*models.AgentRevision, error) {
-	model := agentRevisionModel{ConfigID: agent.AIConfigID}
-	if config := repositories.AIConfigRepository.Get(db, agent.AIConfigID); config != nil {
-		model = agentRevisionModel{
-			ConfigID: config.ID, Provider: string(config.Provider), BaseURL: config.BaseURL, ModelType: string(config.ModelType),
-			ModelName: config.ModelName, MaxContextTokens: config.MaxContextTokens, MaxOutputTokens: config.MaxOutputTokens,
-			TimeoutMS: config.TimeoutMS, MaxRetryCount: config.MaxRetryCount,
-		}
+	model := revisionModelSnapshot(repositories.AIConfigRepository.Get(db, agent.AIConfigID), agent.AIConfigID)
+	translationModel := agentRevisionModel{}
+	if agent.TranslationAIConfigID > 0 {
+		translationModel = revisionModelSnapshot(repositories.AIConfigRepository.Get(db, agent.TranslationAIConfigID), agent.TranslationAIConfigID)
 	}
 	definition := agentRevisionDefinition{
 		Agent: agentRevisionAgent{
 			Name: agent.Name, DisplayName: agent.DisplayName, Avatar: agent.Avatar, StatusText: agent.StatusText,
-			Description: agent.Description, AIConfigID: agent.AIConfigID,
+			Description: agent.Description, AIConfigID: agent.AIConfigID, TranslationAIConfigID: agent.TranslationAIConfigID,
 			MaxSteps: agent.MaxSteps, ContextWindow: agent.ContextWindow,
 			ToolPolicy: agent.ToolPolicy, KnowledgePolicy: agent.KnowledgePolicy, ServiceMode: int(agent.ServiceMode), SystemPrompt: agent.SystemPrompt,
 			ReceptionPolicy: agent.ReceptionPolicy,
@@ -219,7 +235,7 @@ func (s *agentRevisionService) publishSnapshot(db *gorm.DB, agent *models.AIAgen
 			FallbackMode: int(agent.FallbackMode), FallbackMessage: agent.FallbackMessage, KnowledgeIDs: agent.KnowledgeIDs,
 			SkillIDs: agent.SkillIDs, AllowedMCPTools: agent.AllowedMCPTools,
 		},
-		Model: model,
+		Model: model, TranslationModel: translationModel,
 	}
 	for _, binding := range repositories.AIAgentWorkflowBindingRepository.FindEnabledByAgentID(db, agent.ID) {
 		definition.WorkflowBindings = append(definition.WorkflowBindings, AgentRevisionWorkflowBinding{WorkflowID: binding.WorkflowID, WorkflowVersionID: binding.WorkflowVersionID, ToolName: binding.ToolName, TriggerInstruction: binding.TriggerInstruction, Priority: binding.Priority})
@@ -239,4 +255,15 @@ func (s *agentRevisionService) publishSnapshot(db *gorm.DB, agent *models.AIAgen
 		return nil, err
 	}
 	return item, nil
+}
+
+func revisionModelSnapshot(config *models.AIConfig, fallbackID int64) agentRevisionModel {
+	if config == nil {
+		return agentRevisionModel{ConfigID: fallbackID}
+	}
+	return agentRevisionModel{
+		ConfigID: config.ID, Provider: string(config.Provider), BaseURL: config.BaseURL, ModelType: string(config.ModelType),
+		ModelName: config.ModelName, MaxContextTokens: config.MaxContextTokens, MaxOutputTokens: config.MaxOutputTokens,
+		TimeoutMS: config.TimeoutMS, MaxRetryCount: config.MaxRetryCount,
+	}
 }

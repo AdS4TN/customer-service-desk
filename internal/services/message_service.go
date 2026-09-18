@@ -3,9 +3,11 @@ package services
 import (
 	"agent-desk/internal/models"
 	"agent-desk/internal/pkg/dto"
+	"agent-desk/internal/pkg/dto/response"
 	"agent-desk/internal/pkg/enums"
 	"agent-desk/internal/pkg/errorsx"
 	"agent-desk/internal/pkg/openidentity"
+	"agent-desk/internal/pkg/reception"
 	"agent-desk/internal/pkg/tracex"
 	"agent-desk/internal/pkg/utils"
 	"agent-desk/internal/repositories"
@@ -27,6 +29,23 @@ func newMessageService() *messageService {
 }
 
 type messageService struct {
+}
+
+const MessageRecallWindow = 2 * time.Minute
+
+func MessageRecallDeadline(message *models.Message) *time.Time {
+	if message == nil {
+		return nil
+	}
+	reference := message.SentAt
+	if reference == nil || reference.IsZero() {
+		if message.CreatedAt.IsZero() {
+			return nil
+		}
+		reference = &message.CreatedAt
+	}
+	deadline := reference.Add(MessageRecallWindow)
+	return &deadline
 }
 
 func (s *messageService) Get(id int64) *models.Message {
@@ -181,15 +200,52 @@ func (s *messageService) RecallAgentMessage(messageID int64, operator *dto.AuthP
 	if err != nil {
 		return nil, err
 	}
+	return s.recallMessage(message, conversation, enums.IMSenderTypeAgent, operator.UserID, operator.Username, "客服撤回消息")
+}
 
+func (s *messageService) RecallCustomerMessage(messageID, channelID int64, external *openidentity.ExternalUser) (*models.Message, error) {
+	if external == nil || strings.TrimSpace(external.ExternalID) == "" {
+		return nil, errorsx.UnauthorizedI18n("error.e0149")
+	}
+	if messageID <= 0 {
+		return nil, errorsx.InvalidParamI18n("error.e0244")
+	}
+
+	message := s.Get(messageID)
+	if message == nil {
+		return nil, errorsx.InvalidParamI18n("error.e0244")
+	}
+	if message.SenderType != enums.IMSenderTypeCustomer {
+		return nil, errorsx.ForbiddenI18n("error.e0087")
+	}
+	if message.RecalledAt != nil || message.SendStatus == enums.IMMessageStatusRecalled {
+		return nil, errorsx.InvalidParamI18n("error.e0246")
+	}
+
+	conversation, err := s.ValidateConversationSender(message.ConversationID, enums.IMSenderTypeCustomer, nil, external)
+	if err != nil {
+		return nil, err
+	}
+	if channelID <= 0 || conversation.ChannelID != channelID {
+		return nil, errorsx.ForbiddenI18n("error.e0222")
+	}
+	return s.recallMessage(message, conversation, enums.IMSenderTypeCustomer, 0, strings.TrimSpace(external.ExternalName), "用户撤回消息")
+}
+
+func (s *messageService) recallMessage(message *models.Message, conversation *models.Conversation, actorType enums.IMSenderType, actorID int64, actorName, eventContent string) (*models.Message, error) {
 	now := time.Now()
-	err = sqls.WithTransaction(func(ctx *sqls.TxContext) error {
+	deadline := MessageRecallDeadline(message)
+	if deadline == nil || now.After(*deadline) {
+		return nil, errorsx.InvalidParamI18n("error.message.recallExpired")
+	}
+
+	err := sqls.WithTransaction(func(ctx *sqls.TxContext) error {
 		updates := map[string]any{
 			"send_status":      int(enums.IMMessageStatusRecalled),
 			"recalled_at":      now,
 			"updated_at":       now,
-			"update_user_id":   operator.UserID,
-			"update_user_name": operator.Username,
+			"update_user_id":   actorID,
+			"update_user_name": actorName,
 		}
 		if err := repositories.MessageRepository.Updates(ctx.Tx, message.ID, updates); err != nil {
 			return err
@@ -198,8 +254,8 @@ func (s *messageService) RecallAgentMessage(messageID int64, operator *dto.AuthP
 		message.SendStatus = enums.IMMessageStatusRecalled
 		message.RecalledAt = &now
 		message.UpdatedAt = now
-		message.UpdateUserID = operator.UserID
-		message.UpdateUserName = operator.Username
+		message.UpdateUserID = actorID
+		message.UpdateUserName = actorName
 
 		agentReadState, customerReadState := ConversationReadStateService.getConversationReadStates(ctx.Tx, conversation.ID)
 		agentUnreadCount, err := ConversationReadStateService.CountUnreadMessages(ctx, conversation.ID, s.readMessageID(agentReadState), enums.IMSenderTypeCustomer)
@@ -215,8 +271,8 @@ func (s *messageService) RecallAgentMessage(messageID int64, operator *dto.AuthP
 			"agent_unread_count":    agentUnreadCount,
 			"customer_unread_count": customerUnreadCount,
 			"updated_at":            now,
-			"update_user_id":        operator.UserID,
-			"update_user_name":      operator.Username,
+			"update_user_id":        actorID,
+			"update_user_name":      actorName,
 		}
 		if conversation.LastMessageID == message.ID {
 			lastMessage := repositories.MessageRepository.FindLastUnrecalledByConversationID(ctx.Tx, conversation.ID)
@@ -234,7 +290,7 @@ func (s *messageService) RecallAgentMessage(messageID int64, operator *dto.AuthP
 			return err
 		}
 
-		if err := ConversationEventLogService.CreateEvent(ctx, conversation.ID, enums.IMEventTypeMessageRecall, enums.IMSenderTypeAgent, operator.UserID, "客服撤回消息", ""); err != nil {
+		if err := ConversationEventLogService.CreateEvent(ctx, conversation.ID, enums.IMEventTypeMessageRecall, actorType, actorID, eventContent, ""); err != nil {
 			return err
 		}
 		return nil
@@ -271,6 +327,9 @@ func (s *messageService) SendAIServiceNoticeWithRequestID(conversationID int64, 
 	if conversation == nil {
 		return nil, errorsx.InvalidParamI18n("error.e0116")
 	}
+	if !reception.AutomaticMessagesAllowed(conversation, AIAgentService.Get(aiAgentID)) {
+		return nil, nil
+	}
 	if conversation.Status == enums.IMConversationStatusClosed {
 		return nil, errorsx.InvalidParamI18n("error.e0119")
 	}
@@ -278,11 +337,14 @@ func (s *messageService) SendAIServiceNoticeWithRequestID(conversationID int64, 
 		UserID:   0,
 		Username: "system",
 		Nickname: "system",
-	}, nil, requestID, 0)
+	}, nil, requestID, 0, nil)
 }
 
 func (s *messageService) createAIWelcomeMessage(ctx *sqls.TxContext, conversation *models.Conversation, aiAgent *models.AIAgent, now time.Time) (*models.Message, error) {
 	if ctx == nil || conversation == nil || aiAgent == nil || strings.TrimSpace(aiAgent.WelcomeMessage) == "" {
+		return nil, nil
+	}
+	if !reception.AutomaticMessagesAllowed(conversation, aiAgent) {
 		return nil, nil
 	}
 
@@ -399,11 +461,23 @@ func (s *messageService) sendMessage(conversationID int64, senderType enums.IMSe
 	if err != nil {
 		return nil, err
 	}
-	return s.sendValidatedMessage(conversation, senderType, reqSenderID, clientMsgID, messageType, content, payload, operator, external, requestID, workflowRunID)
+	return s.sendValidatedMessage(conversation, senderType, reqSenderID, clientMsgID, messageType, content, payload, operator, external, requestID, workflowRunID, nil)
+}
+
+func (s *messageService) sendDelegatedReply(c *models.Conversation, d *models.ConversationDelegation, r *response.ConversationReplySuggestion) (*models.Message, error) {
+	if c.LastMessageID != r.LastMessageID {
+		return nil, errDelegationStale
+	}
+	return s.sendValidatedMessage(c, enums.IMSenderTypeAI, d.AIAgentID, delegatedClientID(d, r.LastMessageID), enums.IMMessageTypeText,
+		r.Content, "", &dto.AuthPrincipal{Username: "AI", Nickname: "AI"}, nil, "", 0, d)
 }
 
 func (s *messageService) sendValidatedMessage(conversation *models.Conversation, senderType enums.IMSenderType, reqSenderID int64, clientMsgID string,
-	messageType enums.IMMessageType, content, payload string, operator *dto.AuthPrincipal, external *openidentity.ExternalUser, requestID string, workflowRunID int64) (*models.Message, error) {
+	messageType enums.IMMessageType, content, payload string, operator *dto.AuthPrincipal, external *openidentity.ExternalUser, requestID string, workflowRunID int64, delegation *models.ConversationDelegation) (*models.Message, error) {
+	if senderType == enums.IMSenderTypeAgent || senderType == enums.IMSenderTypeAI {
+		unlock := ConversationDelegationService.lockDelivery(conversation.ID)
+		defer unlock()
+	}
 	if err := MessengerService.validateOutbound(conversation, senderType, messageType, content); err != nil {
 		return nil, err
 	}
@@ -482,6 +556,18 @@ func (s *messageService) sendValidatedMessage(conversation *models.Conversation,
 		if err != nil {
 			return err
 		}
+		if senderType == enums.IMSenderTypeAI && (current.DelegationManaged || delegation != nil) {
+			if delegation == nil || current.LastMessageID != conversation.LastMessageID {
+				return errDelegationStale
+			}
+			if err := ConversationDelegationService.validateDelivery(ctx.Tx, current, delegation.Revision, reqSenderID, current.LastCustomerMessageID); err != nil {
+				return err
+			}
+			message.DelegationRevision = delegation.Revision
+		}
+		if senderType == enums.IMSenderTypeAI && !reception.AutomaticMessagesAllowed(current, repositories.AIAgentRepository.Get(ctx.Tx, reqSenderID)) {
+			return errorsx.InvalidParamI18n("error.reception.paused")
+		}
 		message.ReplyToCustomerMessageID = current.LastCustomerMessageID
 		if err := repositories.MessageRepository.Create(ctx.Tx, message); err != nil {
 			return err
@@ -491,6 +577,19 @@ func (s *messageService) sendValidatedMessage(conversation *models.Conversation,
 		}
 		if err := WhatsAppService.enqueue(ctx.Tx, conversation, message); err != nil {
 			return err
+		}
+		if delegation != nil {
+			delegation.LastProcessedMessageID = current.LastMessageID
+			if err := repositories.SaveConversationDelegation(ctx.Tx, delegation); err != nil {
+				return err
+			}
+			kind := "replied"
+			if message.SendStatus == enums.IMMessageStatusSending {
+				kind = "queued"
+			}
+			if err := ConversationDelegationService.event(ctx.Tx, delegation, kind, 0, current.LastMessageID, "", ""); err != nil {
+				return err
+			}
 		}
 		if err := ConversationWorkService.onMessage(ctx, message); err != nil {
 			return err

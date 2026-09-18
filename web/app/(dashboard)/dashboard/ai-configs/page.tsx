@@ -47,6 +47,10 @@ function getModelTypeOptions(t: TFunction, includeAll = true) {
   const options = [
     { value: String(AIModelType.LLM), label: t("aiConfig.modelTypeLlm") },
     {
+      value: String(AIModelType.Translation),
+      label: t("aiConfig.modelTypeTranslation"),
+    },
+    {
       value: String(AIModelType.Embedding),
       label: t("aiConfig.modelTypeEmbedding"),
     },

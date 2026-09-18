@@ -84,24 +84,34 @@ func translationHTMLText(content string) string {
 	return strings.TrimSpace(text.String())
 }
 
-func translationModel(id int64) (*models.Conversation, *models.AIConfig, int64, error) {
+func translationAgent(c *models.Conversation) (*models.AIAgent, int64) {
+	if c == nil {
+		return nil, 0
+	}
+	agentID := c.AIAgentID
+	if agentID <= 0 {
+		channel := ChannelService.Get(c.ChannelID)
+		if channel != nil && channel.Status != enums.StatusDeleted {
+			agentID = channel.AIAgentID
+		}
+	}
+	if agentID <= 0 {
+		return nil, 0
+	}
+	return AIAgentService.Get(agentID), agentID
+}
+
+func translationModel(id int64) (*models.Conversation, *models.AIConfig, int64, int64, error) {
 	c := ConversationService.Get(id)
 	if c == nil {
-		return nil, nil, 0, errorsx.InvalidParamI18n("error.translation.unavailable")
+		return nil, nil, 0, 0, errorsx.InvalidParamI18n("error.translation.unavailable")
 	}
-	a := AIAgentService.Get(c.AIAgentID)
-	if a == nil || a.Status != enums.StatusOk {
-		return nil, nil, 0, errorsx.InvalidParamI18n("error.translation.model")
+	a, agentID := translationAgent(c)
+	snapshot, err := resolveAssistanceSnapshot(a)
+	if err != nil || snapshot.TranslationAIConfig.ID == 0 || snapshot.TranslationAIConfig.Status != enums.StatusOk {
+		return nil, nil, 0, 0, errorsx.InvalidParamI18n("error.translation.model")
 	}
-	cfg := AIConfigService.Get(a.AIConfigID)
-	if cfg == nil {
-		cfg = &models.AIConfig{}
-	}
-	snapshot, err := AgentRevisionService.ResolvePublishedSnapshot(*a, *cfg)
-	if err != nil || snapshot.AIConfig.ID == 0 || snapshot.AIConfig.Status != enums.StatusOk {
-		return nil, nil, 0, errorsx.InvalidParamI18n("error.translation.model")
-	}
-	return c, &snapshot.AIConfig, a.PublishedRevisionID, nil
+	return c, &snapshot.TranslationAIConfig, a.PublishedRevisionID, agentID, nil
 }
 
 func translationModelKey(cfg *models.AIConfig, revision int64) string {
@@ -109,9 +119,9 @@ func translationModelKey(cfg *models.AIConfig, revision int64) string {
 	return fmt.Sprintf("%d:%x", revision, sha256.Sum256(raw))
 }
 
-func translationStillCurrent(c *models.Conversation, cfg *models.AIConfig, revision int64, checkActivity bool) bool {
-	current, currentConfig, currentRevision, err := translationModel(c.ID)
-	return err == nil && current.AIAgentID == c.AIAgentID && current.CustomerID == c.CustomerID && current.ChannelID == c.ChannelID &&
+func translationStillCurrent(c *models.Conversation, cfg *models.AIConfig, revision, agentID int64, checkActivity bool) bool {
+	current, currentConfig, currentRevision, currentAgentID, err := translationModel(c.ID)
+	return err == nil && current.AIAgentID == c.AIAgentID && currentAgentID == agentID && current.CustomerID == c.CustomerID && current.ChannelID == c.ChannelID &&
 		translationModelKey(currentConfig, currentRevision) == translationModelKey(cfg, revision) &&
 		(!checkActivity || (current.LastMessageID == c.LastMessageID && current.Status == c.Status && current.CurrentAssigneeID == c.CurrentAssigneeID))
 }
@@ -120,7 +130,7 @@ func (s *conversationTranslationService) Message(ctx context.Context, id int64, 
 	if req.TargetLanguage == enums.TranslationLanguageAuto || enums.GetTranslationLanguageLabel(req.TargetLanguage) == "" {
 		return nil, errorsx.InvalidParamI18n("error.translation.language")
 	}
-	c, cfg, revision, err := translationModel(id)
+	c, cfg, revision, agentID, err := translationModel(id)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +149,7 @@ func (s *conversationTranslationService) Message(ctx context.Context, id int64, 
 	if err != nil {
 		return nil, err
 	}
-	if translationText(MessageService.Get(m.ID), id) != text || !translationStillCurrent(c, cfg, revision, false) {
+	if translationText(MessageService.Get(m.ID), id) != text || !translationStillCurrent(c, cfg, revision, agentID, false) {
 		return nil, errorsx.InvalidParamI18n("error.translation.stale")
 	}
 	if err := repositories.SaveMessageTranslation(sqls.DB(), &models.MessageTranslation{MessageID: m.ID, CacheKey: key, SourceLanguage: string(result.SourceLanguage), TargetLanguage: string(result.TargetLanguage), Content: result.Content, CreatedAt: time.Now()}); err != nil {
@@ -151,7 +161,7 @@ func (s *conversationTranslationService) Message(ctx context.Context, id int64, 
 
 // Text only produces a private preview. It has no message, outbox, or agent-tool dependency.
 func (s *conversationTranslationService) Text(ctx context.Context, id int64, req request.TranslateConversationText) (*response.ConversationTranslation, error) {
-	c, cfg, revision, err := translationModel(id)
+	c, cfg, revision, agentID, err := translationModel(id)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +188,7 @@ func (s *conversationTranslationService) Text(ctx context.Context, id int64, req
 	if err != nil {
 		return nil, err
 	}
-	if !translationStillCurrent(c, cfg, revision, true) || (customerMessageID != 0 && translationText(MessageService.Get(customerMessageID), id) != customerSource) {
+	if !translationStillCurrent(c, cfg, revision, agentID, true) || (customerMessageID != 0 && translationText(MessageService.Get(customerMessageID), id) != customerSource) {
 		return nil, errorsx.InvalidParamI18n("error.translation.stale")
 	}
 	result.ConversationID, result.LastMessageID = id, c.LastMessageID

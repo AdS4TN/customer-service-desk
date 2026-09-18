@@ -80,6 +80,35 @@ func MessagePostSend(ctx *gin.Context) {
 	httpx.WriteJSON(ctx, builders.BuildMessageWithLocale(item, i18nx.Locale(ctx)))
 }
 
+func MessagePostRecall(ctx *gin.Context) {
+	channel := services.ChannelService.GetEnabledChannel(ctx)
+	if channel == nil {
+		httpx.WriteJSON(ctx, httpx.JsonErrorMsg(ctx, "error.e0211"))
+		return
+	}
+	if channel.ChannelType != enums.ChannelTypeWeb {
+		httpx.WriteJSON(ctx, httpx.JsonErrorMsg(ctx, "error.e0250"))
+		return
+	}
+	external := httpx.GetExternalUser(ctx)
+	if external == nil {
+		httpx.WriteJSON(ctx, httpx.JsonErrorMsg(ctx, "error.e0150"))
+		return
+	}
+
+	req := request.RecallConversationMessageRequest{}
+	if err := params.ReadJSON(ctx, &req); err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	item, err := services.MessageService.RecallCustomerMessage(req.MessageID, channel.ID, external)
+	if err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	httpx.WriteJSON(ctx, builders.BuildMessageWithLocale(item, i18nx.Locale(ctx)))
+}
+
 func MessagePostRead(ctx *gin.Context) {
 	if services.ChannelService.GetEnabledChannel(ctx) == nil {
 		httpx.WriteJSON(ctx, httpx.JsonErrorMsg(ctx, "error.e0211"))

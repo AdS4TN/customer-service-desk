@@ -27,6 +27,7 @@ type ConversationParticipantResponse struct {
 }
 
 type ConversationResponse struct {
+	CustomerAvatar            string                          `json:"customerAvatar"`
 	WorkStatus                enums.ConversationWorkStatus    `json:"workStatus"`
 	WorkRevision              int64                           `json:"workRevision"`
 	PendingSince              string                          `json:"pendingSince,omitempty"`

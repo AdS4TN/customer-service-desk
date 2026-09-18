@@ -30,6 +30,7 @@ import { ImMessageHTML } from "@/components/im-message-html";
 import { LinkedMessageContent } from "@/components/chat/linked-message-content";
 import { parseLinkedMessage } from "@/lib/linked-message";
 import { useImageLightbox } from "@/components/image-lightbox";
+import { useMessageRecallWindow } from "@/hooks/use-message-recall-window";
 import { JsonTreeViewer } from "@/components/json-tree-viewer";
 import { ProjectDialog } from "@/components/project-dialog";
 import { useI18n } from "@/i18n/provider";
@@ -69,6 +70,7 @@ import {
 import { formatDateTime } from "@/lib/utils";
 import { AgentMessageEditor } from "./agent-message-editor";
 import { ReceptionWorkbar } from "./reception-workbar";
+import { ConversationDelegation } from "./conversation-delegation";
 import { MessageTranslation, TranslationToolbar } from "./conversation-translation";
 import { IMMessageStatus } from "@/lib/generated/enums";
 
@@ -465,6 +467,7 @@ export function ChatPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <ConversationDelegation key={`delegation-${conversation.id}`} conversation={conversation} />
       <ReceptionWorkbar key={conversation.id} conversation={conversation} />
       <TranslationToolbar key={`translation-${conversation.id}`} conversationId={conversation.id} />
       {disconnected ? <div role="status" className="flex shrink-0 items-center gap-2 border-b bg-muted px-4 py-2 text-sm"><AlertTriangleIcon className="size-4 shrink-0" /><span>{t(channel?.status === 0 ? "conversation.inbox.offline" : "conversation.inbox.disabledChannel")}</span></div> : null}
@@ -628,7 +631,8 @@ const MessageItem = memo(
     const recalledHtmlClassName = isAgentSide
       ? "[&_p]:text-emerald-800"
       : "[&_p]:text-muted-foreground";
-    const showRecallAction = canRecall && !isRecalled;
+    const recallWindowOpen = useMessageRecallWindow(canRecall ? message.recallableUntil : undefined);
+    const showRecallAction = canRecall && recallWindowOpen && !isRecalled;
     const bubbleVariant = isRecalled
       ? "recalled"
       : isAi

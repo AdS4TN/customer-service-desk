@@ -24,11 +24,13 @@ export const AIAgentHandoffModeLabels: Record<AIAgentHandoffMode, string> = {
 
 export enum AIModelType {
   LLM = "llm",
+  Translation = "translation",
   Embedding = "embedding",
   Rerank = "rerank",
 }
 export const AIModelTypeLabels: Record<AIModelType, string> = {
   [AIModelType.LLM]: "大语言模型",
+  [AIModelType.Translation]: "翻译模型",
   [AIModelType.Embedding]: "向量模型",
   [AIModelType.Rerank]: "重排序模型",
 }

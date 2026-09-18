@@ -46,7 +46,7 @@ func BuildSkillDocument(skill *models.SkillDefinition, toolDefinitions []runtime
 		lines = append(lines, "", "技能说明：", content)
 	}
 	if examples := parseJSONStringArray(skill.Examples); len(examples) > 0 {
-		lines = append(lines, "", "典型示例问法：")
+		lines = append(lines, "", "适用场景示例：")
 		for _, item := range examples {
 			lines = append(lines, "- "+item)
 		}

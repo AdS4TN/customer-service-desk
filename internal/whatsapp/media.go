@@ -18,7 +18,7 @@ import (
 
 const maxMediaBytes = 64 << 20
 
-func parseContent(evt *events.Message) (string, *linkedchat.Message, whatsmeow.DownloadableMessage) {
+func parseContentBase(evt *events.Message) (string, *linkedchat.Message, whatsmeow.DownloadableMessage) {
 	m := evt.Message
 	if evt.IsViewOnce || evt.IsViewOnceV2 || evt.IsViewOnceV2Extension {
 		return "", &linkedchat.Message{Kind: "view_once", State: "protected"}, nil
@@ -49,6 +49,10 @@ func parseContent(evt *events.Message) (string, *linkedchat.Message, whatsmeow.D
 		v := m.VideoMessage
 		media = v
 		meta.Kind, meta.MimeType, meta.Size, meta.Seconds, text = "video", v.GetMimetype(), v.GetFileLength(), v.GetSeconds(), v.GetCaption()
+	case m.PtvMessage != nil:
+		v := m.PtvMessage
+		media = v
+		meta.Kind, meta.MimeType, meta.Size, meta.Seconds, text = "round_video", v.GetMimetype(), v.GetFileLength(), v.GetSeconds(), v.GetCaption()
 	case m.DocumentMessage != nil:
 		v := m.DocumentMessage
 		media = v
@@ -66,10 +70,10 @@ func parseContent(evt *events.Message) (string, *linkedchat.Message, whatsmeow.D
 			names = append(names, c.GetDisplayName()+"\n"+c.GetVcard())
 		}
 		return strings.Join(names, "\n"), &linkedchat.Message{Kind: "contact"}, nil
-	case m.ProtocolMessage != nil || m.SenderKeyDistributionMessage != nil:
+	case m.ProtocolMessage != nil || m.SenderKeyDistributionMessage != nil || m.FastRatchetKeySenderKeyDistributionMessage != nil || m.GroupRootKeyShare != nil || m.MessageHistoryBundle != nil || m.MessageHistoryNotice != nil || m.StickerSyncRmrMessage != nil:
 		return "", nil, nil
 	default:
-		return "", &linkedchat.Message{Kind: "unsupported"}, nil
+		return parseStructured(m)
 	}
 	meta.Filename = filepath.Base(strings.ReplaceAll(meta.Filename, "\\", "/"))
 	if meta.Filename == "." || meta.Filename == "/" || meta.Filename == "" {

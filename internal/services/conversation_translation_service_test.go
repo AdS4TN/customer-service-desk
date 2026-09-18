@@ -10,6 +10,7 @@ import (
 
 	"agent-desk/internal/ai"
 	"agent-desk/internal/models"
+	"agent-desk/internal/pkg/dto"
 	"agent-desk/internal/pkg/dto/request"
 	"agent-desk/internal/pkg/enums"
 )
@@ -87,8 +88,65 @@ func TestTranslationMessageCacheAndIsolation(t *testing.T) {
 	}
 }
 
+func TestTranslationUsesPublishedTranslationModel(t *testing.T) {
+	db, c, _ := setupCopilotTest(t)
+	translationConfig := models.AIConfig{Name: "translation", Status: enums.StatusOk, Provider: enums.AIProviderOpenAI, ModelType: enums.AIModelTypeTranslation, ModelName: "translation-model"}
+	if err := db.Create(&translationConfig).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.AIAgent{}).Where("id = ?", c.AIAgentID).Update("translation_ai_config_id", translationConfig.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AIAgentService.PublishAIAgent(c.AIAgentID, &dto.AuthPrincipal{UserID: 1, Username: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	s := &conversationTranslationService{complete: func(_ context.Context, cfg models.AIConfig, _, _ string) (*ai.ChatCompletionResult, error) {
+		if cfg.ID != translationConfig.ID || cfg.ModelName != translationConfig.ModelName {
+			t.Fatalf("translation used reply model: %#v", cfg)
+		}
+		return &ai.ChatCompletionResult{Content: translationTestJSON}, nil
+	}}
+	if _, err := s.Text(context.Background(), c.ID, request.TranslateConversationText{Text: "Hello", TargetLanguage: enums.TranslationLanguageChinese}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTranslationFallsBackToChannelAgentAndRejectsChannelChanges(t *testing.T) {
+	db, c, _ := setupCopilotTest(t)
+	channel := models.Channel{
+		Name: "translation fallback", ChannelID: "translation-fallback", ChannelType: enums.ChannelTypeWeb,
+		Status: enums.StatusOk, AIAgentID: c.AIAgentID,
+	}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&c).Updates(map[string]any{"ai_agent_id": 0, "channel_id": channel.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	s := &conversationTranslationService{complete: func(_ context.Context, cfg models.AIConfig, _, _ string) (*ai.ChatCompletionResult, error) {
+		if cfg.ID == 0 {
+			t.Fatal("channel Agent model was not resolved")
+		}
+		return &ai.ChatCompletionResult{Content: translationTestJSON}, nil
+	}}
+	if _, err := s.Text(context.Background(), c.ID, request.TranslateConversationText{Text: "Hello", TargetLanguage: enums.TranslationLanguageChinese}); err != nil {
+		t.Fatalf("channel Agent fallback failed: %v", err)
+	}
+
+	s.complete = func(_ context.Context, _ models.AIConfig, _, _ string) (*ai.ChatCompletionResult, error) {
+		if err := db.Model(&channel).Update("ai_agent_id", 0).Error; err != nil {
+			t.Fatal(err)
+		}
+		return &ai.ChatCompletionResult{Content: translationTestJSON}, nil
+	}
+	if _, err := s.Text(context.Background(), c.ID, request.TranslateConversationText{Text: "Hello", TargetLanguage: enums.TranslationLanguageChinese}); err == nil {
+		t.Fatal("translation accepted after the channel Agent changed")
+	}
+}
+
 func TestTranslationRejectsConcurrentChanges(t *testing.T) {
-	for _, kind := range []string{"message", "assignment", "closed", "customer", "agent_disabled", "recall"} {
+	for _, kind := range []string{"message", "assignment", "closed", "customer", "agent_deleted", "recall"} {
 		t.Run(kind, func(t *testing.T) {
 			db, c, m := setupCopilotTest(t)
 			db.AutoMigrate(&models.MessageTranslation{})
@@ -102,8 +160,8 @@ func TestTranslationRejectsConcurrentChanges(t *testing.T) {
 					db.Model(&c).Update("status", enums.IMConversationStatusClosed)
 				case "customer":
 					db.Model(&c).Update("customer_id", 99)
-				case "agent_disabled":
-					db.Model(&models.AIAgent{}).Where("id = ?", c.AIAgentID).Update("status", enums.StatusDisabled)
+				case "agent_deleted":
+					db.Model(&models.AIAgent{}).Where("id = ?", c.AIAgentID).Update("status", enums.StatusDeleted)
 				case "recall":
 					db.Model(&m).Update("recalled_at", time.Now())
 				}

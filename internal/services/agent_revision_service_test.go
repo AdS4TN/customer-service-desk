@@ -50,6 +50,41 @@ func TestAgentRevisionServiceRestoresPublishedSnapshotAndKeepsAPIKey(t *testing.
 	if snapshot.AIConfig.ModelName != "published-model" || snapshot.AIConfig.BaseURL != "https://published.example/v1" || snapshot.AIConfig.APIKey != "rotated-secret" {
 		t.Fatalf("model snapshot not restored safely: %#v", snapshot.AIConfig)
 	}
+	if snapshot.TranslationAIConfig.ModelName != snapshot.AIConfig.ModelName || snapshot.TranslationAIConfig.ID != snapshot.AIConfig.ID {
+		t.Fatalf("legacy translation model did not fall back to reply model: %#v", snapshot.TranslationAIConfig)
+	}
+}
+
+func TestAgentRevisionServiceRestoresSeparateTranslationModel(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&models.AgentRevision{}, &models.AIConfig{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+	sqls.SetDB(db)
+	translationConfig := models.AIConfig{ID: 9, Name: "translation", Status: enums.StatusOk, Provider: enums.AIProviderOpenAI, ModelType: enums.AIModelTypeTranslation, ModelName: "current-translation", APIKey: "translation-secret"}
+	if err := db.Create(&translationConfig).Error; err != nil {
+		t.Fatalf("create translation config: %v", err)
+	}
+	definition := agentRevisionDefinition{
+		Agent:            agentRevisionAgent{AIConfigID: 8, TranslationAIConfigID: translationConfig.ID},
+		Model:            agentRevisionModel{ConfigID: 8, ModelName: "reply-snapshot"},
+		TranslationModel: agentRevisionModel{ConfigID: translationConfig.ID, Provider: string(enums.AIProviderOpenAI), ModelType: string(enums.AIModelTypeTranslation), ModelName: "translation-snapshot"},
+	}
+	data, _ := json.Marshal(definition)
+	revision := models.AgentRevision{AgentID: 7, Revision: 1, Status: enums.StatusOk, Definition: string(data)}
+	if err := db.Create(&revision).Error; err != nil {
+		t.Fatalf("create revision: %v", err)
+	}
+	snapshot, err := AgentRevisionService.ResolvePublishedSnapshot(models.AIAgent{ID: 7, PublishedRevisionID: revision.ID}, models.AIConfig{ID: 8, Status: enums.StatusOk, APIKey: "reply-secret"})
+	if err != nil {
+		t.Fatalf("ResolvePublishedSnapshot: %v", err)
+	}
+	if snapshot.TranslationAIConfig.ID != translationConfig.ID || snapshot.TranslationAIConfig.ModelName != "translation-snapshot" || snapshot.TranslationAIConfig.APIKey != "translation-secret" {
+		t.Fatalf("translation snapshot not restored safely: %#v", snapshot.TranslationAIConfig)
+	}
 }
 
 func TestAgentRevisionServicePublicIdentityUsesPublishedRevision(t *testing.T) {

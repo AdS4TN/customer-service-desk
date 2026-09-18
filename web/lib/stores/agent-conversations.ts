@@ -33,6 +33,7 @@ import {
 import { summarizeIMMessage } from "@/lib/im-message"
 import { generateUUID } from "@/lib/utils"
 import { translateCurrentMessage } from "@/i18n/messages"
+import type { ReplySuggestion } from "@/lib/api/conversation-copilot"
 
 export const agentConversationFilterOptions = [
   { value: "all", labelKey: "conversation.inbox.all" },
@@ -84,7 +85,11 @@ type AgentConversationsStore = {
   drafts: Record<number, string>
   draftInsertion: { id: string; conversationId: number; text: string } | null
   privateNoteDrafts: Record<number, { content: string; mentionIds: string[]; clientId: string }>
+  copilotSuggestions: Record<number, { suggestion: ReplySuggestion; inserted: boolean }>
   setPrivateNoteDraft: (id: number, draft: { content: string; mentionIds: string[]; clientId: string }) => void
+  saveCopilotSuggestion: (suggestion: ReplySuggestion) => void
+  markCopilotSuggestionInserted: (conversationId: number) => void
+  clearCopilotSuggestion: (conversationId: number) => void
   insertSuggestion: (conversationId: number, lastMessageId: number, text: string) => boolean
   consumeDraftInsertion: (id: string) => void
   setDraft: (conversationId: number, html: string) => void
@@ -145,7 +150,30 @@ export const useAgentConversationsStore = create<AgentConversationsStore>((set, 
   drafts: {},
   draftInsertion: null,
   privateNoteDrafts: {},
+  copilotSuggestions: {},
   setPrivateNoteDraft: (id, draft) => set((state) => ({ privateNoteDrafts: { ...state.privateNoteDrafts, [id]: draft } })),
+  saveCopilotSuggestion: (suggestion) => set((state) => ({
+    copilotSuggestions: {
+      ...state.copilotSuggestions,
+      [suggestion.conversationId]: { suggestion, inserted: false },
+    },
+  })),
+  markCopilotSuggestionInserted: (conversationId) => set((state) => {
+    const saved = state.copilotSuggestions[conversationId]
+    if (!saved || saved.inserted) return state
+    return {
+      copilotSuggestions: {
+        ...state.copilotSuggestions,
+        [conversationId]: { ...saved, inserted: true },
+      },
+    }
+  }),
+  clearCopilotSuggestion: (conversationId) => set((state) => {
+    if (!state.copilotSuggestions[conversationId]) return state
+    const copilotSuggestions = { ...state.copilotSuggestions }
+    delete copilotSuggestions[conversationId]
+    return { copilotSuggestions }
+  }),
   insertSuggestion: (conversationId, lastMessageId, text) => {
     const state = get()
     const conversation = state.conversations.find((item) => item.id === conversationId) ?? state.selectedConversationData
@@ -459,6 +487,8 @@ export const useAgentConversationsStore = create<AgentConversationsStore>((set, 
       const nextMessages = isSelected
         ? mergeImMessagesByIdAsc(state.messages, [message])
         : state.messages
+      const copilotSuggestions = { ...state.copilotSuggestions }
+      delete copilotSuggestions[message.conversationId]
       return {
         messages: nextMessages,
         selectedConversationData: state.selectedConversationData ? patchConversationListWithMessage([state.selectedConversationData], message)[0] : null,
@@ -466,6 +496,7 @@ export const useAgentConversationsStore = create<AgentConversationsStore>((set, 
           state.conversations,
           message
         ),
+        copilotSuggestions,
       }
     })
   },

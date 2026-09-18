@@ -42,6 +42,15 @@ func (s *conversationWorkService) onMessage(ctx *sqls.TxContext, message *models
 	if item.Status == enums.IMConversationStatusClosed {
 		return nil
 	}
+	if message.SenderType == enums.IMSenderTypeAgent {
+		kind := "human_reply"
+		if message.SenderID == 0 {
+			kind = "phone_reply"
+		}
+		if err := ConversationDelegationService.stopForConversationTx(ctx, item, kind, message.SenderID); err != nil {
+			return err
+		}
+	}
 	now := time.Now()
 	updates := map[string]any{"snoozed_until": nil}
 	if message.SenderType == enums.IMSenderTypeCustomer {
@@ -58,7 +67,7 @@ func (s *conversationWorkService) onMessage(ctx *sqls.TxContext, message *models
 			updates["reminder_revision"] = item.WorkRevision + 1
 		}
 	} else {
-		if message.SenderType == enums.IMSenderTypeAI && item.Status != enums.IMConversationStatusAIServing {
+		if message.SenderType == enums.IMSenderTypeAI && item.Status != enums.IMConversationStatusAIServing && message.DelegationRevision == 0 {
 			return nil
 		}
 		if message.SendStatus != enums.IMMessageStatusSent && message.SendStatus != enums.IMMessageStatusDelivered && message.SendStatus != enums.IMMessageStatusRead {

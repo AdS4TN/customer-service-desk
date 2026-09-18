@@ -315,7 +315,7 @@ export function ConversationWorkbench() {
           {conversation ? (
             <>
               <Avatar className="size-8 shrink-0 lg:size-9">
-                <AvatarImage src="" />
+                <AvatarImage src={conversation.customerAvatar} alt={conversation.customerName} />
                 <AvatarFallback className="bg-primary/10 text-sm text-primary">
                   {t("conversation.customerAvatar")}
                 </AvatarFallback>
