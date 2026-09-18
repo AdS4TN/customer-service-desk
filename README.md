@@ -1,139 +1,76 @@
-# AgentDesk Customer Service Desk
+# AgentDesk
 
-基于 AgentDesk 二次开发的 AI 客服与销售跟进系统。项目面向需要同时处理网站咨询、消息渠道接入、知识库问答、人工接管和后续销售跟进的团队，重点展示一套从“客户咨询”到“AI 接待 / 人工协作 / 线索跟进”的完整业务链路。
+[简体中文](README_ZH.md)
 
-> 说明：本仓库保留原项目历史、许可证和已有基础能力。我的整理重点是公开展示本次二次开发方向、工程拆解和可核验的源码入口，避免把已有开源基础误表述为个人从零实现。
+AgentDesk 是一个面向客服与销售团队的 AI Agent 服务台系统，支持在线咨询、知识库问答、人工接管、销售线索跟进、工单闭环和私有化部署。
 
-## 项目定位
+它不是简单地把大模型接入聊天框，而是围绕真实客服流程设计的一套 AI Helpdesk 基础系统：客户可以从网站或消息渠道发起咨询，AI Agent 先进行知识库约束下的接待，必要时转给人工客服，并继续沉淀客户信息、销售机会和服务记录。
 
-传统客服系统通常只覆盖工单或在线聊天，本项目把 AI Agent、知识库 RAG、人工接管和销售线索沉淀放在同一条链路中：
+## 产品预览
 
-```mermaid
-flowchart LR
-  A[客户咨询] --> B[统一会话]
-  B --> C[AI Agent 首轮接待]
-  C --> D{知识库是否足以回答}
-  D -- 是 --> E[基于知识库回复]
-  D -- 否 --> F[兜底并建议人工]
-  E --> G{是否需要人工}
-  F --> H[人工接管]
-  G -- 是 --> H
-  G -- 否 --> I[沉淀客户信息]
-  H --> I
-  I --> J[工单或销售线索]
-  J --> K[跟进 / 关闭]
-```
+### 客户侧在线咨询
 
-适合用于展示以下能力：
+![客户侧在线咨询](screenshots/1.png)
 
-- AI 客服系统的后端分层、会话状态和人工接管设计。
-- RAG 知识库问答、检索证据和可回答性控制。
-- 多渠道消息接入后的统一会话建模。
-- 客户记忆、销售线索和人工修订之间的一致性处理。
-- Go + Next.js 全栈工程、Docker 部署和 CI 配置。
+客户可以在 Web 聊天页中直接发起咨询。AI Agent 会先接待，基于知识库回答问题；当用户明确要求人工介入或当前问题需要人工确认时，会触发人工接管流程。
 
-## 本次二次开发重点
+### 客服工作台
 
-最近一次核心提交为 `173ae4e feat: integrate multichannel AI reception and sales follow-up`。该提交在既有 AgentDesk 基础上扩展了多渠道接待、客服协作、客户记忆、销售线索、跨语言接待和 RAG 能力。
+![客服工作台](screenshots/2.png)
 
-### 1. 多渠道接待
+客服工作台支持会话列表、消息处理、AI 转人工、客服回复、内部协作、客户资料、会话标签和工单信息查看，适合日常客服接待和售后处理。
 
-新增 WhatsApp / Messenger 相关接入链路，并将消息统一归入会话系统。实现中区分历史导入消息和实时客户消息，避免同步历史记录时触发 AI 批量回复。
+### 知识库与 AI Agent 配置
 
-关键入口：
-
-- `internal/services/whatsapp_service.go`
-- `internal/services/messenger_service.go`
-- `internal/whatsapp/*`
-- `internal/messenger/*`
-- `web/app/(dashboard)/dashboard/channels/*`
-
-### 2. 客服待办与人工协作
-
-将“已读”和“已处理”拆开建模，支持客服在统一收件箱中处理待办、稍后跟进、内部备注和人工接管。这样可以避免只用未读状态代表处理进度。
-
-关键入口：
-
-- `internal/services/conversation_work_service.go`
-- `internal/services/conversation_inbox_service.go`
-- `internal/services/conversation_human_dispatch_service.go`
-- `web/app/(dashboard)/dashboard/conversations/_components/reception-workbar.tsx`
-
-### 3. 客户记忆与画像
-
-新增会话记忆提取、人工确认、来源消息追溯和异步任务修订号保护。核心目标是防止旧的 AI 提取结果覆盖新消息或人工修订后的内容。
-
-关键入口：
-
-- `internal/services/conversation_memory_service.go`
-- `internal/repositories/conversation_memory.go`
-- `internal/models/conversation_memory.go`
-- `web/app/(dashboard)/dashboard/conversations/_components/conversation-memory.tsx`
-
-### 4. 销售线索与跟进
-
-从客户消息中识别明确购买意图，抽取产品、数量、目的地、联系方式等字段，并保留来源消息证据。人工确认后的字段与 AI 新建议分离处理，支持负责人、下一步动作和跟进时间。
-
-关键入口：
-
-- `internal/services/sales_lead_extraction.go`
-- `internal/services/sales_lead_service.go`
-- `internal/services/sales_lead_followup.go`
-- `internal/models/sales_lead.go`
-- `web/app/(dashboard)/dashboard/sales-leads/page.tsx`
-- `web/components/sales-lead-detail.tsx`
-
-### 5. 跨语言接待
-
-支持客服查看消息译文、翻译回复草稿，并在发送前确认。AI 自动回复语言只从客户当前文本和近期客户语言上下文判断，避免后台语言、知识库语言或客服界面语言干扰。
-
-关键入口：
-
-- `internal/services/conversation_translation_service.go`
-- `internal/ai/application/runtime/reply_language.go`
-- `web/app/(dashboard)/dashboard/conversations/_components/conversation-translation.tsx`
-- `web/app/(dashboard)/dashboard/conversations/_components/translated-reply.tsx`
-
-### 6. RAG 与知识库增强
-
-新增递归切片、父子切片、网站导入和 Elasticsearch 向量库适配。父子切片的思路是用较小片段匹配问题，用较大父片段提供回答上下文。
-
-关键入口：
-
-- `internal/ai/rag/chunk/parent_child_provider.go`
-- `internal/ai/rag/chunk/recursive_provider.go`
-- `internal/services/knowledge_ingestion_service.go`
-- `internal/services/knowledge_website_crawler.go`
-- `internal/ai/rag/vectordb/elasticsearch.go`
-
-### 7. AI 回复调度
-
-新增进程内回复队列，使同一会话内的 AI 回复串行执行，不同会话仍可并行处理。同时过滤历史、撤回、发送中、失败和已关闭会话中的消息，降低错误触发自动回复的风险。
-
-关键入口：
-
-- `internal/ai/runtime/reply_queue.go`
-- `internal/ai/runtime/reply_eligibility.go`
-- `internal/ai/application/runtime/eino_agent_loop.go`
-
-## 技术栈
-
-| 层级 | 技术 |
+| 知识库 FAQ | AI Agent 配置 |
 | --- | --- |
-| 后端 | Go 1.26, Gin, GORM, SQLite / MySQL / PostgreSQL |
-| 前端 | Next.js 16, React 19, TypeScript, Tailwind CSS |
-| AI | OpenAI-compatible 模型接入, Eino, MCP, RAG |
-| 向量库 | Qdrant, LanceDB, Elasticsearch |
-| 工作流编辑器 | Flowgram Editor, React 18 |
-| 部署 | Docker, Docker Compose, GitHub Actions |
+| ![知识库 FAQ](screenshots/4.png) | ![AI Agent 配置](screenshots/5.png) |
 
-## 运行方式
+知识库用于沉淀 FAQ、文档和可检索内容；AI Agent 可以绑定模型配置、知识库、Skills 和工具能力，形成面向具体客服场景的智能客服实例。
 
-推荐使用 Docker Compose 体验完整服务：
+### 模型配置
+
+![模型配置](screenshots/3.png)
+
+模型配置支持 OpenAI-compatible 接入方式，可分别配置大语言模型、向量模型和重排模型，并管理上下文、输出、超时、重试和启用状态。
+
+## 核心能力
+
+- **AI Agent 客服**：AI 优先回复，支持知识库约束回答、兜底、确认、工具调用和人工协同。
+- **统一会话系统**：支持访客会话、消息收发、未读状态、会话分配、转接、关闭和历史消息导入。
+- **多渠道接入**：支持 Web 入口，并扩展 WhatsApp、Messenger、Telegram、Zalo、企业微信等消息渠道。
+- **客服工作台**：客服可接管会话、回复用户、协作处理、关联客户、创建工单和跟进销售机会。
+- **知识库 RAG**：支持知识库、文档、FAQ、切片、向量检索、重排、检索日志和可回答性判断。
+- **客户记忆与画像**：从会话中沉淀客户偏好、需求、历史询盘和可追溯来源，为后续接待提供上下文。
+- **销售线索管理**：识别购买意图，提取产品、数量、预算、周期、联系人等信息，并支持负责人和跟进记录。
+- **销售经验沉淀**：从历史销售会话中提炼可复用的谈判、决策和转化经验，形成可审阅的 Skill 规则。
+- **业务自动化**：通过规则配置触发线索提取、工单创建、负责人分配和标签更新等动作。
+- **跨语言接待**：支持消息翻译、回复草稿翻译和客户语言上下文识别。
+- **私有化部署**：支持 SQLite / MySQL / PostgreSQL、Qdrant / LanceDB / Elasticsearch，适合本地体验、内网部署和企业自托管。
+
+## 适用场景
+
+- 官网在线客服
+- SaaS 产品支持
+- AI + 人工混合接待
+- 企业内部服务台
+- 售后、报障、投诉和运营支持
+- 外贸、跨境和多语言销售接待
+- 需要沉淀销售经验和客户画像的客服团队
+
+## 快速开始
+
+推荐先用 Docker Compose 体验完整服务：
 
 ```bash
 docker compose up -d --build
 ```
+
+Compose 会启动：
+
+- `agent-desk`：应用服务，默认端口 `8083`
+- `mysql`：MySQL 8.4
+- `qdrant`：向量数据库，默认端口 `6333` / `6334`
 
 启动后访问：
 
@@ -147,14 +84,33 @@ docker compose up -d --build
 - 用户名：`admin`
 - 密码：`ChangeMe123!`
 
-公开部署前请务必修改默认密码，并配置独立的鉴权、会话和模型密钥。
+生产或公网环境中请务必修改默认密码，并配置独立的鉴权、会话、模型和渠道密钥。
 
 ## 本地开发
 
-准备配置：
+### 环境要求
+
+- Go `1.26+`
+- Node.js `20+`
+- `pnpm`
+- Qdrant
+
+### 准备配置
 
 ```bash
 cp config/config.example.yaml config/config.yaml
+```
+
+默认配置使用：
+
+- SQLite：`data/app.db`
+- 后端：`http://127.0.0.1:8083`
+- Qdrant gRPC：`127.0.0.1:6334`
+
+如果本地没有 Qdrant，可以用 Docker 启动：
+
+```bash
+docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
 ```
 
 安装前端依赖：
@@ -171,40 +127,110 @@ cd ..
 task dev
 ```
 
-常用命令：
+默认开发访问地址：
 
-```bash
-task build
-task generator
-task enums
-go test ./internal/services/... ./internal/repositories/... ./internal/pkg/...
-cd web && pnpm typecheck
+- 管理后台：`http://localhost:3000/dashboard`
+- 客服会话工作台：`http://localhost:3000/dashboard/conversations`
+- 客户侧演示页：`http://localhost:3000/support/demo`
+- 客户聊天页：`http://localhost:3000/support/chat`
+
+## 技术栈
+
+- 后端：Go + Gin + GORM + `github.com/mlogclub/simple`
+- 前端：Next.js 16 + React 19 + TypeScript + Tailwind CSS
+- 数据库：SQLite / MySQL / PostgreSQL
+- 向量库：Qdrant / LanceDB / Elasticsearch
+- AI：OpenAI-compatible LLM / Embedding / Rerank + RAG + Skills + MCP
+- 工作流编辑器：Flowgram Editor
+- 部署：Docker / Docker Compose / GitHub Actions
+
+## 项目结构
+
+```text
+.
+├── cmd/                    # server / migration / generator / testdata
+├── internal/
+│   ├── ai/                 # LLM / RAG / Runtime / Skills / MCP
+│   ├── bootstrap/          # 启动、路由、数据库和迁移初始化
+│   ├── builders/           # 模型和聚合结果到响应 DTO 的转换
+│   ├── handlers/           # dashboard / api / third HTTP handlers
+│   ├── middleware/         # Gin middleware
+│   ├── migration/          # 幂等数据迁移
+│   ├── models/             # GORM models
+│   ├── pkg/                # config / dto / enums / httpx / utils 等共享包
+│   ├── repositories/       # 数据访问层
+│   └── services/           # 业务编排和事务边界
+├── flowgram-editor/        # 嵌入式工作流编辑器
+├── web/                    # Next.js 前端项目
+│   ├── app/                # 管理后台、客服工作台和客户侧页面
+│   ├── components/         # React components
+│   ├── lib/                # API client、SDK 和业务工具
+│   └── public/sdk/         # 可嵌入 SDK 构建产物
+├── config/                 # 配置文件
+├── docker/                 # Docker 配置
+└── docs/                   # 文档站点子模块
 ```
 
-## 验证状态
+## 常用命令
 
-仓库中包含针对本次业务扩展的测试，例如：
+```bash
+task dev              # 启动后端和前端开发服务
+task build            # 构建前端 SPA 和当前平台 Go 二进制
+task build:lancedb    # 构建启用 LanceDB 的当前平台二进制
+task release          # 构建 linux / darwin / windows 发布产物
+task release:lancedb  # 构建启用 LanceDB 的多平台发布产物
+task generator        # 运行后端代码生成
+task enums            # 生成前端枚举
+task --list           # 查看全部任务
+```
 
-- `internal/services/conversation_memory_service_test.go`
-- `internal/services/sales_lead_service_test.go`
-- `internal/services/sales_lead_followup_test.go`
-- `internal/services/conversation_translation_service_test.go`
-- `internal/ai/runtime/reply_queue_test.go`
-- `web/lib/sales-lead.test.mjs`
-- `web/lib/reception.test.mjs`
+## 业务流程
 
-本 README 重点整理项目与贡献边界。公开前已对提交历史做过密钥扫描，未发现真实密钥泄露；部分示例 key 和 token 为占位符。
+```mermaid
+flowchart TD
+    A[客户从 Web 或消息渠道发起咨询] --> B[创建或匹配会话]
+    B --> C[客户发送消息]
+    C --> D[AI 回复运行时]
+    D --> E[加载会话历史与 Agent 配置]
+    E --> F[检索绑定知识库]
+    F --> G{检索内容是否足以回答}
+    G -- 否 --> H[返回兜底提示并建议人工]
+    G -- 是 --> I[生成知识库约束回复]
+    I --> J{是否需要人工接管}
+    H --> K[进入人工接管]
+    J -- 是 --> K
+    J -- 否 --> L[沉淀客户记忆和服务记录]
+    K --> M[客服工作台处理]
+    M --> N{是否需要后续跟进}
+    N -- 工单 --> O[创建或关联工单]
+    N -- 销售 --> P[生成或更新销售线索]
+    N -- 否 --> Q[关闭或继续观察]
+    O --> Q
+    P --> Q
+```
 
-## 贡献边界
+## 相关文档
 
-为了便于技术负责人审阅，建议重点查看 `173ae4e` 这次提交。该提交适合从以下三个角度追问：
+- [AI 客服配置](AI-CUSTOMER-SERVICE.md)
+- [业务自动化](AUTOMATION.md)
+- [会话委派](DELEGATION.md)
+- [销售经验工作台](SALES-EXPERIENCE.md)
+- [WhatsApp 复用与集成](WHATSAPP-REUSE.md)
 
-- 异步 AI 提取与人工修订如何避免互相覆盖。
-- 历史消息导入为什么不能触发自动回复。
-- 销售线索如何保留来源证据，并区分 AI 建议与人工确认。
+## Docker 镜像
 
-需要明确的是，基础客服平台、部分渠道、权限体系、知识库和工单能力来自既有 AgentDesk 项目历史。本仓库当前用于展示在该基础上的扩展、整合和工程化改造。
+如果只需要构建应用镜像，可以自行准备 MySQL 和 Qdrant，并挂载配置文件：
+
+```bash
+docker build -t mlogclub/agent-desk .
+docker run --rm -p 8083:8083 \
+  -v $(pwd)/docker/agent-desk.yaml:/app/config/config.yaml:ro \
+  -v agent-desk-data:/app/data \
+  mlogclub/agent-desk
+```
+
+Compose 使用 [docker/agent-desk.yaml](docker/agent-desk.yaml) 作为容器内配置，应用会通过 Docker 内部服务名访问 `mysql` 和 `qdrant`。
 
 ## License
 
-本项目遵循原仓库许可证，见 [LICENSE](LICENSE)。二次开发内容同样在该许可证约束下公开。
+本项目使用 Apache License 2.0，见 [LICENSE](LICENSE)。
