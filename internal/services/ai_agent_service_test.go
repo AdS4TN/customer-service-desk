@@ -44,6 +44,13 @@ func TestUpdateAIAgentKeepsPublishedRevisionActive(t *testing.T) {
 	if err := db.Create(config).Error; err != nil {
 		t.Fatalf("create ai config: %v", err)
 	}
+	translationConfig := &models.AIConfig{
+		Name: "translation", Status: enums.StatusOk, Provider: enums.AIProviderOpenAI,
+		ModelType: enums.AIModelTypeTranslation, ModelName: "translation-model",
+	}
+	if err := db.Create(translationConfig).Error; err != nil {
+		t.Fatalf("create translation config: %v", err)
+	}
 	agent := &models.AIAgent{
 		Name: "published agent", Status: enums.StatusOk, AIConfigID: config.ID,
 		ServiceMode: enums.IMConversationServiceModeAIFirst, HandoffMode: enums.AIAgentHandoffModeWaitPool,
@@ -57,10 +64,11 @@ func TestUpdateAIAgentKeepsPublishedRevisionActive(t *testing.T) {
 		ID: agent.ID,
 		CreateAIAgentRequest: request.CreateAIAgentRequest{
 			Name: "updated draft", DisplayName: "Draft Support", Avatar: "/uploads/draft.png", StatusText: "Draft status", AIConfigID: config.ID,
-			ServiceMode:    enums.IMConversationServiceModeAIFirst,
-			HandoffMode:    enums.AIAgentHandoffModeWaitPool,
-			FallbackMode:   enums.AIAgentFallbackModeNoAnswer,
-			RolloutPercent: 100,
+			TranslationAIConfigID: translationConfig.ID,
+			ServiceMode:           enums.IMConversationServiceModeAIFirst,
+			HandoffMode:           enums.AIAgentHandoffModeWaitPool,
+			FallbackMode:          enums.AIAgentFallbackModeNoAnswer,
+			RolloutPercent:        100,
 		},
 	}, &dto.AuthPrincipal{UserID: 1, Username: "admin"})
 	if err != nil {
@@ -79,6 +87,21 @@ func TestUpdateAIAgentKeepsPublishedRevisionActive(t *testing.T) {
 	}
 	if updated.DisplayName != "Draft Support" || updated.Avatar != "/uploads/draft.png" || updated.StatusText != "Draft status" {
 		t.Fatalf("draft public identity not saved: %#v", updated)
+	}
+	if updated.TranslationAIConfigID != translationConfig.ID {
+		t.Fatalf("translation config id = %d, want %d", updated.TranslationAIConfigID, translationConfig.ID)
+	}
+
+	err = AIAgentService.UpdateAIAgent(request.UpdateAIAgentRequest{
+		ID: agent.ID,
+		CreateAIAgentRequest: request.CreateAIAgentRequest{
+			Name: "invalid translation draft", AIConfigID: config.ID, TranslationAIConfigID: config.ID,
+			ServiceMode: enums.IMConversationServiceModeAIFirst, HandoffMode: enums.AIAgentHandoffModeWaitPool,
+			FallbackMode: enums.AIAgentFallbackModeNoAnswer, RolloutPercent: 100,
+		},
+	}, &dto.AuthPrincipal{UserID: 1, Username: "admin"})
+	if err == nil || !strings.Contains(err.Error(), "translation model type") {
+		t.Fatalf("expected translation model type error, got %v", err)
 	}
 }
 

@@ -24,5 +24,6 @@ type MessageResponse struct {
 	AgentRead       bool                  `json:"agentRead"`
 	AgentReadAt     string                `json:"agentReadAt,omitempty"`
 	RecalledAt      string                `json:"recalledAt,omitempty"`
+	RecallableUntil string                `json:"recallableUntil,omitempty"`
 	QuotedMessageID int64                 `json:"quotedMessageId,omitempty"`
 }

@@ -18,6 +18,7 @@ import {
 } from "@/components/chat/conversation-message-scroller"
 import { ImMessageHTML } from "@/components/im-message-html"
 import { useImageLightbox } from "@/components/image-lightbox"
+import { useMessageRecallWindow } from "@/hooks/use-message-recall-window"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -36,6 +37,8 @@ type SupportChatMessageListProps = {
   streamingReply?: StreamingReply | null
   assistantName?: string
   assistantAvatar?: string
+  recallingMessageId?: number
+  onRecall?: (messageId: number) => Promise<ImMessage | null>
 }
 
 export type SupportChatMessageListHandle = {
@@ -88,6 +91,8 @@ export const SupportChatMessageList = forwardRef<SupportChatMessageListHandle, S
       streamingReply,
       assistantName,
       assistantAvatar,
+      recallingMessageId = 0,
+      onRecall,
     },
     ref
   ) {
@@ -181,6 +186,8 @@ export const SupportChatMessageList = forwardRef<SupportChatMessageListHandle, S
                 showTimeline={showTimeline}
                 onImageSettled={handleImageSettled}
                 timelineLabel={getTimelineLabel(message.sentAt, t)}
+                recalling={recallingMessageId === message.id}
+                onRecall={onRecall}
               />
             </ConversationMessageScrollerItem>
           )
@@ -259,17 +266,25 @@ type MessageItemProps = {
   showTimeline: boolean
   onImageSettled: () => void
   timelineLabel: string
+  recalling: boolean
+  onRecall?: (messageId: number) => Promise<ImMessage | null>
 }
 
 const MessageItem = memo(
-  function MessageItem({ message, showTimeline, onImageSettled, timelineLabel }: MessageItemProps) {
+  function MessageItem({ message, showTimeline, onImageSettled, timelineLabel, recalling, onRecall }: MessageItemProps) {
     const t = useI18n()
     const { open } = useImageLightbox()
     const isCustomer = message.senderType === "customer"
+    const isRecalled = Boolean(message.recalledAt) || message.sendStatus === 6
+    const recallWindowOpen = useMessageRecallWindow(
+      isCustomer && !isRecalled ? message.recallableUntil : undefined
+    )
     const senderName = isCustomer ? t("supportChat.customerSelf") : message.senderName?.trim() || t("supportChat.agentLabel")
     const avatarSrc =
       !isCustomer && message.senderAvatar?.trim() ? message.senderAvatar.trim() : undefined
-    const htmlContent = renderIMMessageHTML(message)
+    const htmlContent = isRecalled
+      ? `<p>${t("supportChat.messageRecalledBody")}</p>`
+      : renderIMMessageHTML(message)
     const fallbackName = senderName.slice(0, 1).toUpperCase()
 
     return (
@@ -306,14 +321,29 @@ const MessageItem = memo(
               {isCustomer ? (
                 <span>{message.agentRead ? t("supportChat.agentRead") : t("supportChat.agentUnread")}</span>
               ) : null}
+              {isRecalled ? <span>{t("supportChat.messageRecalled")}</span> : null}
+              {isCustomer && !isRecalled && recallWindowOpen && onRecall ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-1 py-0 text-[11px] text-muted-foreground shadow-none"
+                  disabled={recalling}
+                  onClick={() => void onRecall(message.id)}
+                >
+                  {recalling ? t("supportChat.recalling") : t("supportChat.recall")}
+                </Button>
+              ) : null}
             </>
           }
         >
           <ConversationMessageBubble
-            variant={isCustomer ? "customer" : "system"}
+            variant={isRecalled ? "recalled" : isCustomer ? "customer" : "system"}
             className={cn(
               "rounded-lg border-0 px-3 py-2 text-sm leading-normal shadow-[0_10px_22px_rgba(15,23,42,0.06)]",
-              isCustomer
+              isRecalled
+                ? "border border-dashed border-border bg-muted/50 text-muted-foreground shadow-none"
+                : isCustomer
                 ? "!bg-[#a9ea7a] !text-[#161616] dark:!bg-emerald-500 dark:!text-emerald-950"
                 : "!border-border !bg-card !text-card-foreground dark:!bg-background"
             )}
@@ -321,7 +351,9 @@ const MessageItem = memo(
             <ImMessageHTML
               html={htmlContent}
               className={cn(
-                isCustomer
+                isRecalled
+                  ? "[&_p]:text-muted-foreground"
+                  : isCustomer
                   ? "[&_p]:text-[#161616] dark:[&_p]:text-emerald-950 [&_a]:text-[#161616] dark:[&_a]:text-emerald-950 [&_a]:underline [&_img]:cursor-zoom-in"
                   : "[&_a]:text-card-foreground [&_a]:underline [&_img]:cursor-zoom-in"
               )}
@@ -337,6 +369,8 @@ const MessageItem = memo(
     isSameMessageItemRender(prevProps.message, nextProps.message) &&
     prevProps.showTimeline === nextProps.showTimeline &&
     prevProps.timelineLabel === nextProps.timelineLabel &&
+    prevProps.recalling === nextProps.recalling &&
+    prevProps.onRecall === nextProps.onRecall &&
     prevProps.onImageSettled === nextProps.onImageSettled
 )
 
@@ -350,6 +384,9 @@ function isSameMessageItemRender(prev: ImMessage, next: ImMessage) {
     prev.content === next.content &&
     prev.payload === next.payload &&
     prev.sentAt === next.sentAt &&
+    prev.sendStatus === next.sendStatus &&
+    prev.recalledAt === next.recalledAt &&
+    prev.recallableUntil === next.recallableUntil &&
     prev.agentRead === next.agentRead
   )
 }

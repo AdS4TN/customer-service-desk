@@ -181,6 +181,8 @@ func addRouter(app *gin.Engine) {
 	registerDashboardAgentTeamScheduleRoutes(dashboardGroup.Group("/agent-team-schedule"))
 	registerDashboardAIAgentRoutes(dashboardGroup.Group("/ai-agent"))
 	registerDashboardAIWorkflowRoutes(dashboardGroup.Group("/ai-workflow"))
+	registerDashboardAutomationRoutes(dashboardGroup.Group("/automation"))
+	registerDashboardSalesExperienceRoutes(dashboardGroup.Group("/sales-experience"))
 	registerDashboardAgentRunRoutes(dashboardGroup.Group("/agent-run"))
 	registerDashboardAIConfigRoutes(dashboardGroup.Group("/ai-config"))
 	registerDashboardAssetRoutes(dashboardGroup.Group("/asset"))

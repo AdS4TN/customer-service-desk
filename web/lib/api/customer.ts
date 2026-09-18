@@ -4,6 +4,10 @@ import type { ContactType } from "@/lib/generated/enums"
 import { AdminCompany } from "./company"
 
 export type AdminCustomer = {
+  avatar?: string
+  avatarState?: string
+  channelName?: string
+  manualTags?: string[]
   id: number
   name: string
   gender: number
@@ -41,6 +45,7 @@ export type SaveCustomerProfileContactLine = {
 }
 
 export type SaveCustomerProfilePayload = {
+  manualTags?: string[]
   id?: number
   name: string
   gender: number
@@ -69,6 +74,13 @@ export function fetchCustomers(body: CustomerListRequest) {
 
 export function fetchCustomer(id: number) {
   return request<AdminCustomer | null>(`/api/dashboard/customer/${id}`)
+}
+
+export function syncConversationContact(conversationId: number) {
+  return request<AdminCustomer>("/api/dashboard/conversation/sync_contact", {
+    method: "POST",
+    body: JSON.stringify({ conversationId }),
+  })
 }
 
 export function createCustomer(payload: CreateAdminCustomerPayload) {

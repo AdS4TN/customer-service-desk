@@ -40,6 +40,7 @@ function getProviderOptions(t: TFunction) {
 function getModelTypeOptions(t: TFunction) {
   return [
     { value: String(AIModelType.LLM), label: t("aiConfig.modelTypeLlm") },
+    { value: String(AIModelType.Translation), label: t("aiConfig.modelTypeTranslation") },
     { value: String(AIModelType.Embedding), label: t("aiConfig.modelTypeEmbedding") },
     { value: String(AIModelType.Rerank), label: t("aiConfig.modelTypeRerank") },
   ]
@@ -296,10 +297,16 @@ function AIConfigEditDialogBody({
                       placeholder={t("aiConfig.selectModelType")}
                       searchPlaceholder={t("aiConfig.searchModelType")}
                       emptyText={t("aiConfig.emptyModelType")}
+                      disabled={itemId !== null}
                       onChange={field.onChange}
                     />
                   )}
                 />
+                {itemId !== null ? (
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {t("aiConfig.modelTypeImmutableHint")}
+                  </p>
+                ) : null}
                 <FieldError errors={[errors.modelType]} />
               </FieldContent>
             </Field>

@@ -34,7 +34,7 @@ func TestParseIncoming(t *testing.T) {
 		{"history", func(e *events.Message) { e.SourceWebMsg = &waWeb.WebMessageInfo{} }, true},
 		{"recovered", func(e *events.Message) { e.UnavailableRequestID = "request" }, true},
 		{"status", func(e *events.Message) { e.Info.Chat = types.StatusBroadcastJID }, false},
-		{"edit", func(e *events.Message) { e.IsEdit = true }, false},
+		{"edit", func(e *events.Message) { e.IsEdit = true }, true},
 		{"viewonce", func(e *events.Message) { e.IsViewOnce = true }, true},
 		{"image", func(e *events.Message) { e.Message = &waE2E.Message{ImageMessage: &waE2E.ImageMessage{}} }, true},
 	} {

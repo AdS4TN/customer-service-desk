@@ -56,34 +56,36 @@ type UpdateAIConfigStatusRequest struct {
 }
 
 type CreateAIAgentRequest struct {
-	Name                string                          `json:"name"`
-	DisplayName         string                          `json:"displayName"`
-	Avatar              string                          `json:"avatar"`
-	StatusText          string                          `json:"statusText"`
-	Description         string                          `json:"description"`
-	AIConfigID          int64                           `json:"aiConfigId"`
-	MaxSteps            int                             `json:"maxSteps"`
-	ContextWindow       int                             `json:"contextWindow"`
-	ToolPolicy          string                          `json:"toolPolicy"`
-	KnowledgePolicy     string                          `json:"knowledgePolicy"`
-	ServiceMode         enums.IMConversationServiceMode `json:"serviceMode"`
-	SystemPrompt        string                          `json:"systemPrompt"`
-	ReceptionPolicy     *reception.Policy               `json:"receptionPolicy"`
-	WelcomeMessage      string                          `json:"welcomeMessage"`
-	ReplyTimeoutSeconds int                             `json:"replyTimeoutSeconds"`
-	RolloutPercent      int                             `json:"rolloutPercent"`
-	TeamIDs             []int64                         `json:"teamIds"`
-	HandoffMode         enums.AIAgentHandoffMode        `json:"handoffMode"`
-	FallbackMode        enums.AIAgentFallbackMode       `json:"fallbackMode"`
-	FallbackMessage     string                          `json:"fallbackMessage"`
-	KnowledgeBaseIDs    []int64                         `json:"knowledgeBaseIds"`
-	SkillIDs            []int64                         `json:"skillIds"`
-	MCPTools            []AIAgentMCPToolRequest         `json:"mcpTools"`
-	WorkflowBindings    []AIAgentWorkflowBindingRequest `json:"workflowBindings"`
+	Name                  string                          `json:"name"`
+	DisplayName           string                          `json:"displayName"`
+	Avatar                string                          `json:"avatar"`
+	StatusText            string                          `json:"statusText"`
+	Description           string                          `json:"description"`
+	AIConfigID            int64                           `json:"aiConfigId"`
+	TranslationAIConfigID int64                           `json:"translationAiConfigId"`
+	MaxSteps              int                             `json:"maxSteps"`
+	ContextWindow         int                             `json:"contextWindow"`
+	ToolPolicy            string                          `json:"toolPolicy"`
+	KnowledgePolicy       string                          `json:"knowledgePolicy"`
+	ServiceMode           enums.IMConversationServiceMode `json:"serviceMode"`
+	SystemPrompt          string                          `json:"systemPrompt"`
+	ReceptionPolicy       *reception.Policy               `json:"receptionPolicy"`
+	WelcomeMessage        string                          `json:"welcomeMessage"`
+	ReplyTimeoutSeconds   int                             `json:"replyTimeoutSeconds"`
+	RolloutPercent        int                             `json:"rolloutPercent"`
+	TeamIDs               []int64                         `json:"teamIds"`
+	HandoffMode           enums.AIAgentHandoffMode        `json:"handoffMode"`
+	FallbackMode          enums.AIAgentFallbackMode       `json:"fallbackMode"`
+	FallbackMessage       string                          `json:"fallbackMessage"`
+	KnowledgeBaseIDs      []int64                         `json:"knowledgeBaseIds"`
+	SkillIDs              []int64                         `json:"skillIds"`
+	MCPTools              []AIAgentMCPToolRequest         `json:"mcpTools"`
+	WorkflowBindings      []AIAgentWorkflowBindingRequest `json:"workflowBindings"`
 }
 
 type UpdateAIAgentRequest struct {
-	ID int64 `json:"id"`
+	ID               int64 `json:"id"`
+	CapabilitiesOnly bool  `json:"capabilitiesOnly"`
 	CreateAIAgentRequest
 }
 

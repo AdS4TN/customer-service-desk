@@ -4,6 +4,14 @@ This file defines the mandatory working agreement for AI agents in this reposito
 
 ## 1. Scope and Priorities
 
+### Production Messaging Hold (2026-09-14)
+
+- The connected WhatsApp account belongs to a real company salesperson. Treat its conversations and contacts as production data.
+- The user has approved restoring services, channel reception, enabled AI Agents for translation, and continued development. Keep agents/conversations in human-only mode with no automatic welcome or replies. WhatsApp outbound text/media remains blocked; do not enable automatic sending, retry outboxes, or run live customer-send tests without explicit new approval. Previously disabled/deleted channels remain untouched.
+- WhatsApp text/media sends are hard-blocked by `internal/whatsapp/outbound_safety.go`. Do not remove or bypass this hold as part of feature development or tests.
+- Use isolated synthetic data and mocked send transports for verification. Never infer permission to message customers from a request to import history, extract sales experience, or test Skills.
+- The emergency database backup is `data/app-before-emergency-send-stop-20260914.db`. Do not restore it wholesale: it contains the earlier enabled sending configuration.
+
 - These rules apply to the repository root and every subdirectory.
 - Explicit user instructions take precedence over this file. Mention any deliberate deviation in the final summary.
 - Inspect the relevant implementation before editing. Reuse current helpers, component APIs, generated-code workflows, and neighboring patterns instead of relying on memory.

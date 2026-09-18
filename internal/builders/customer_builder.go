@@ -5,6 +5,7 @@ import (
 	"agent-desk/internal/pkg/dto/response"
 	"agent-desk/internal/pkg/utils"
 	"agent-desk/internal/services"
+	"encoding/json"
 	"time"
 )
 
@@ -12,7 +13,10 @@ func BuildCustomer(item *models.Customer) *response.CustomerResponse {
 	if item == nil {
 		return nil
 	}
+	tags := []string{}
+	_ = json.Unmarshal([]byte(item.ManualTags), &tags)
 	return &response.CustomerResponse{
+		Avatar: item.Avatar, AvatarState: item.AvatarState, ChannelName: item.ChannelName, ManualTags: tags,
 		ID:            item.ID,
 		Name:          item.Name,
 		Gender:        item.Gender,

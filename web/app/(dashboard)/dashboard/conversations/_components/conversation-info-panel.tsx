@@ -5,6 +5,7 @@ import {
   Link2Icon,
   MailIcon,
   PencilIcon,
+  RefreshCwIcon,
   PhoneIcon,
   TimerIcon,
   UserRoundIcon,
@@ -19,6 +20,7 @@ import { CustomerLinkOrCreateDialog } from "@/components/customer-link-or-create
 import { JsonTreeViewer } from "@/components/json-tree-viewer";
 import { ProjectDialog } from "@/components/project-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -49,6 +51,7 @@ import { fetchTickets, type TicketItem } from "@/lib/api/ticket";
 import {
   fetchCustomer,
   saveCustomerProfile,
+  syncConversationContact,
   type AdminCustomer,
 } from "@/lib/api/customer";
 import {
@@ -660,6 +663,8 @@ function CustomerLinkedBody({ conversation, customerId }: CustomerLinkedBodyProp
   const [customerEditOpen, setCustomerEditOpen] = useState(false);
   const [customerEditSaving, setCustomerEditSaving] = useState(false);
   const [companyEditOpen, setCompanyEditOpen] = useState(false);
+  const [syncingContact, setSyncingContact] = useState(false);
+  const channelType = useAgentConversationsStore((state) => state.channels.find((channel) => channel.id === conversation.channelId)?.channelType);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -684,7 +689,22 @@ function CustomerLinkedBody({ conversation, customerId }: CustomerLinkedBodyProp
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, conversation.customerName, conversation.customerAvatar]);
+
+  async function syncContact() {
+    if (syncingContact) return;
+    setSyncingContact(true);
+    try {
+      const updated = await syncConversationContact(conversation.id);
+      setCustomer(updated);
+      await useAgentConversationsStore.getState().loadConversations();
+      toast.success(t("customerForm.synced"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("customerForm.syncFailed"));
+    } finally {
+      setSyncingContact(false);
+    }
+  }
 
   const isProfileEmpty =
     customer &&
@@ -729,10 +749,10 @@ function CustomerLinkedBody({ conversation, customerId }: CustomerLinkedBodyProp
       <section className="space-y-2">
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-start gap-2 text-sm">
-            <UserRoundIcon
-              className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-              aria-hidden
-            />
+            <Avatar className="size-9 shrink-0">
+              <AvatarImage src={customer.avatar} alt={displayName} />
+              <AvatarFallback>{Array.from(displayName).slice(0, 1).join("")}</AvatarFallback>
+            </Avatar>
             <div className="min-w-0 flex-1 space-y-0.5">
               <p className="line-clamp-2 leading-snug text-foreground">
                 <span className="font-medium">{displayName}</span>
@@ -743,18 +763,38 @@ function CustomerLinkedBody({ conversation, customerId }: CustomerLinkedBodyProp
                   </span>
                 ) : null}
               </p>
+              {customer.channelName && customer.channelName !== customer.name ? (
+                <p className="break-all text-xs text-muted-foreground">{t("customerForm.channelName", { name: customer.channelName })}</p>
+              ) : null}
             </div>
           </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 shrink-0 gap-1 px-2 text-xs"
             onClick={() => setCustomerEditOpen(true)}
           >
-            <PencilIcon className="size-3.5" />
-            {t("conversation.edit")}
+            <PencilIcon data-icon="inline-start" />
+            {t("customerForm.editProfile")}
           </Button>
+          {channelType === "whatsapp" ? (
+            <Button type="button" variant="ghost" size="icon-sm" onClick={() => void syncContact()}
+              disabled={syncingContact} aria-label={t("customerForm.syncContact")} title={t("customerForm.syncContact")}>
+              <RefreshCwIcon className={cn(syncingContact && "animate-spin")} />
+            </Button>
+          ) : null}
+        </div>
+        {customer.avatarState === "hidden" || customer.avatarState === "empty" || customer.avatarState === "failed" ? (
+          <p className="text-xs text-muted-foreground" role="status">{t(`customerForm.avatar.${customer.avatarState}`)}</p>
+        ) : null}
+
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-muted-foreground">{t("customerForm.manualTags")}</p>
+          {customer.manualTags?.length ? (
+            <div className="flex flex-wrap gap-1.5">{customer.manualTags.map((tag) => <Badge key={tag} variant="secondary" className="max-w-full whitespace-normal break-all">{tag}</Badge>)}</div>
+          ) : <p className="text-xs text-muted-foreground">{t("customerForm.noTags")}</p>}
         </div>
 
         <div className="space-y-2">
@@ -897,6 +937,7 @@ function CustomerLinkedBody({ conversation, customerId }: CustomerLinkedBodyProp
           setCustomerEditSaving(true);
           try {
             await saveCustomerProfile({ ...payload, id: customer.id });
+            void useAgentConversationsStore.getState().loadConversations();
             toast.success(t("conversation.saved"));
             void load();
             setCustomerEditOpen(false);

@@ -54,6 +54,44 @@ func TestUpdateAIConfigKeepsAPIKeyWhenRequestAPIKeyBlank(t *testing.T) {
 	if updated.APIKey != "sk-existing" {
 		t.Fatalf("expected api key to be preserved, got %q", updated.APIKey)
 	}
+
+	err = AIConfigService.UpdateAIConfig(request.UpdateAIConfigRequest{
+		ID: item.ID,
+		CreateAIConfigRequest: request.CreateAIConfigRequest{
+			Name: "new", Provider: enums.AIProviderOpenAI, BaseURL: "https://new.example.com",
+			ModelType: enums.AIModelTypeTranslation, ModelName: "new-model", TimeoutMS: 120000,
+		},
+	}, &dto.AuthPrincipal{UserID: 1, Username: "admin"})
+	if err == nil {
+		t.Fatalf("expected immutable model type error, got %v", err)
+	}
+}
+
+func TestBuildAIConfigModelAcceptsTranslationAndRejectsUnknownType(t *testing.T) {
+	translation, err := AIConfigService.buildAIConfigModel(request.CreateAIConfigRequest{
+		Name:      "translator",
+		Provider:  enums.AIProviderOpenAI,
+		BaseURL:   "https://translation.example.com/v1",
+		ModelType: enums.AIModelTypeTranslation,
+		ModelName: "translation-model",
+	})
+	if err != nil {
+		t.Fatalf("build translation model: %v", err)
+	}
+	if translation.ModelType != enums.AIModelTypeTranslation {
+		t.Fatalf("model type = %q, want %q", translation.ModelType, enums.AIModelTypeTranslation)
+	}
+
+	_, err = AIConfigService.buildAIConfigModel(request.CreateAIConfigRequest{
+		Name:      "unknown",
+		Provider:  enums.AIProviderOpenAI,
+		BaseURL:   "https://unknown.example.com/v1",
+		ModelType: enums.AIModelType("unknown"),
+		ModelName: "unknown-model",
+	})
+	if err == nil {
+		t.Fatal("expected unsupported model type error")
+	}
 }
 
 func setupAIConfigServiceTestDB(t *testing.T) *gorm.DB {

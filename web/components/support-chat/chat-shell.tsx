@@ -139,6 +139,7 @@ export function SupportChatShell() {
     streamingReply,
     messagesHasMore,
     messagesLoadingMore,
+    recallingMessageId,
     loadOlderMessages,
     status,
     error,
@@ -153,6 +154,7 @@ export function SupportChatShell() {
     retry,
     disconnectSocket,
     markConversationRead,
+    recallMessage,
     closeConversation,
   } = useSupportChatStore(
     useShallow((state) => ({
@@ -165,6 +167,7 @@ export function SupportChatShell() {
       streamingReply: state.streamingReply,
       messagesHasMore: state.messagesHasMore,
       messagesLoadingMore: state.messagesLoadingMore,
+      recallingMessageId: state.recallingMessageId,
       loadOlderMessages: state.loadOlderMessages,
       status: state.status,
       error: state.error,
@@ -179,6 +182,7 @@ export function SupportChatShell() {
       retry: state.retry,
       disconnectSocket: state.disconnectSocket,
       markConversationRead: state.markConversationRead,
+      recallMessage: state.recallMessage,
       closeConversation: state.closeConversation,
     }))
   )
@@ -437,6 +441,8 @@ export function SupportChatShell() {
             hasMoreOlder={messagesHasMore}
             loadingOlder={messagesLoadingMore}
             onLoadOlder={loadOlderMessages}
+            recallingMessageId={recallingMessageId}
+            onRecall={recallMessage}
           />
           <div className="shrink-0 border-t border-border/80 bg-card/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-10px_24px_rgba(15,23,42,0.05)] dark:bg-card/90 dark:shadow-none">
             <CustomerMessageEditor

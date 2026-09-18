@@ -63,10 +63,11 @@ type CustomerProfileContactItem struct {
 
 // SaveCustomerProfileRequest 客户主信息与联系方式一并保存（单事务）；id 为空或 0 表示新建客户。
 type SaveCustomerProfileRequest struct {
-	ID        *int64                       `json:"id,omitempty"`
-	Name      string                       `json:"name"`
-	Gender    int                          `json:"gender"`
-	CompanyID int64                        `json:"companyId"`
-	Remark    string                       `json:"remark"`
-	Contacts  []CustomerProfileContactItem `json:"contacts"`
+	ManualTags *[]string                    `json:"manualTags,omitempty"`
+	ID         *int64                       `json:"id,omitempty"`
+	Name       string                       `json:"name"`
+	Gender     int                          `json:"gender"`
+	CompanyID  int64                        `json:"companyId"`
+	Remark     string                       `json:"remark"`
+	Contacts   []CustomerProfileContactItem `json:"contacts"`
 }

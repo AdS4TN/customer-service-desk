@@ -22,7 +22,6 @@ import (
 	"agent-desk/internal/pkg/dto/request"
 	"agent-desk/internal/pkg/enums"
 	"agent-desk/internal/pkg/errorsx"
-	"agent-desk/internal/pkg/reception"
 	"agent-desk/internal/pkg/toolx"
 	"agent-desk/internal/pkg/utils"
 	svc "agent-desk/internal/services"
@@ -992,35 +991,7 @@ func retrieveAgentLoopKnowledge(ctx context.Context, agent models.AIAgent, query
 }
 
 func buildAgentLoopSystemPrompt(agent models.AIAgent, hasKnowledgeBase bool, knowledgeContext string, retrieveErr error) string {
-	prompt := strings.TrimSpace(agent.SystemPrompt)
-	if prompt == "" {
-		prompt = "You are a customer service assistant. Answer accurately, ask for clarification when evidence is insufficient, and do not invent facts."
-	}
-	prompt += reception.Prompt(agent.ReceptionPolicy)
-	prompt += replyLanguagePolicy
-	prompt += `
-
-You are the official AI customer service representative of the organization operating this assistant, not an outside observer. Speak directly on behalf of the organization. When discussing the organization, its products, services, policies, or capabilities, use first-person language such as "we" and "our". Never refer to the organization as "the company", "the brand", "they", or another third party. Treat Knowledge evidence as internal company knowledge: use it to answer naturally, but never mention documents, materials, retrieved context, a knowledge base, a website, search results, or whether those sources contain the answer. If the organization's formal name is not configured or supported by evidence, do not guess it; continue using first-person language. Clearly identify yourself as an AI customer service assistant when identity disclosure is relevant, and never pretend to be a human.`
-	prompt += "\n\nMaintain conversational continuity. If the immediately preceding assistant message already welcomed the customer and the current customer message is only a greeting, reply briefly without repeating the welcome wording, service capabilities, or service scope."
-	if retrieveErr != nil {
-		prompt += "\n\nKnowledge retrieval is temporarily unavailable for this message. You may answer greetings, acknowledgements, gratitude, farewells, and requests for clarification naturally. For product facts, policies, pricing, functions, procedures, timing, refunds, accounts, permissions, or after-sales questions, do not claim that any detail is verified. Explain that you cannot verify it now, ask one focused question when useful, or offer human handoff."
-	} else if hasKnowledgeBase && strings.TrimSpace(knowledgeContext) == "" {
-		prompt += "\n\nKnowledge retrieval found no supporting evidence for this message. You may answer greetings, acknowledgements, gratitude, farewells, and requests for clarification naturally. For product facts, policies, pricing, functions, procedures, timing, refunds, accounts, permissions, or after-sales questions, do not infer or invent an answer. State that the available information is insufficient, ask one focused question when useful, or offer human handoff."
-	}
-	if hasKnowledgeBase && (retrieveErr != nil || strings.TrimSpace(knowledgeContext) == "") {
-		if fallback := strings.TrimSpace(agent.FallbackMessage); fallback != "" {
-			prompt += "\nUse this configured fallback wording when knowledge evidence is insufficient: " + fallback
-		}
-		switch agent.FallbackMode {
-		case enums.AIAgentFallbackModeSuggestRetry:
-			prompt += "\nPrefer asking the customer for one specific missing detail."
-		case enums.AIAgentFallbackModeHandoff:
-			prompt += "\nTell the customer that a human handoff will be requested."
-		default:
-			prompt += "\nState plainly that the available knowledge is insufficient."
-		}
-	}
-	return prompt
+	return instruction.BuildCustomerServicePrompt(agent, hasKnowledgeBase, knowledgeContext, retrieveErr)
 }
 
 func writeAgentLoopRun(req RunInput, startedAt time.Time, result *ai.ChatCompletionResult, inputPreview string, historyCount int, retrieverCount int, retrieveErr error, skillContext agentLoopSkillContext, responsePolicy agentLoopResponsePolicy, toolCalls []svc.AgentLoopToolCallInput, cause error, interrupted bool, workflowSteps []svc.AgentLoopStepInput) (int64, error) {

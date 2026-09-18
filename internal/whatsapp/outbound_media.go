@@ -11,6 +11,9 @@ import (
 )
 
 func (s *Session) SendMedia(ctx context.Context, account, chat, id string, media linkedchat.OutboundMedia) error {
+	if OutboundMessagesDisabled {
+		return ErrOutboundDisabled
+	}
 	s.op.Lock()
 	defer s.op.Unlock()
 	if s.client == nil || !s.client.IsConnected() || s.Status().Account != account {

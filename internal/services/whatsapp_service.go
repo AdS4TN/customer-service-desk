@@ -18,6 +18,7 @@ import (
 	"agent-desk/internal/pkg/errorsx"
 	"agent-desk/internal/pkg/linkedchat"
 	"agent-desk/internal/pkg/openidentity"
+	"agent-desk/internal/pkg/reception"
 	"agent-desk/internal/pkg/utils"
 	"agent-desk/internal/repositories"
 	"agent-desk/internal/whatsapp"
@@ -143,14 +144,21 @@ func (s *linkedChatService) Connect(id int64) (linkedchat.Status, error) {
 			return linkedchat.Status{}, errorsx.BusinessErrorI18n(1, s.errorKey("storeFailed"))
 		}
 		if wa, ok := session.(*whatsapp.Session); ok {
+			wa.SetProfileHandler(func(profile whatsapp.ContactProfile) error { return s.saveContactProfile(id, profile) })
 			wa.SetHistoryTargets(func(account string) ([]whatsapp.HistoryRequest, error) {
 				return s.historyTargets(id, account)
 			}, func(msg whatsapp.Incoming) bool {
 				for _, chat := range append([]string{msg.Chat}, msg.ChatAliases...) {
 					candidate := msg
 					candidate.Chat = chat
-					if MessageService.Take("client_msg_id = ?", s.messageID(id, candidate)) != nil {
-						return false
+					if existing := MessageService.Take("client_msg_id = ?", s.messageID(id, candidate)); existing != nil {
+						var payload struct {
+							LinkedMessage *linkedchat.Message `json:"linkedMessage"`
+						}
+						if json.Unmarshal([]byte(existing.Payload), &payload) != nil || payload.LinkedMessage == nil {
+							return false
+						}
+						return payload.LinkedMessage.Kind == "unsupported" && payload.LinkedMessage.RawType == ""
 					}
 				}
 				return true
@@ -224,19 +232,45 @@ func (s *linkedChatService) Receive(channelID int64, msg linkedchat.Incoming) er
 		return nil
 	}
 	// Keep existing customers created under the older LID-based connector.
+	knownCustomer := false
 	for _, chat := range append([]string{msg.Chat}, msg.ChatAliases...) {
 		if identity := repositories.CustomerIdentityRepository.GetBy(sqls.DB(), s.externalSource(), whatsAppIdentity(channelID, msg.Account, chat)); identity != nil {
 			msg.Chat = chat
+			knownCustomer = true
 			break
 		}
 	}
 	clientID := s.messageID(channelID, msg)
 	if msg.Message != nil && msg.Message.TargetID != "" {
 		metadata := *msg.Message
-		target := msg
-		target.ID = metadata.TargetID
-		if original := MessageService.Take("client_msg_id = ?", s.messageID(channelID, target)); original != nil {
+		if original := s.findIncomingTarget(channel, msg, metadata.TargetID); original != nil {
+			if metadata.Update != "" && msg.FromMe == (original.SenderType != enums.IMSenderTypeCustomer) {
+				return s.updateIncomingMedia(original, msg)
+			}
 			metadata.TargetPreview = limitText(original.Content, 160)
+			if metadata.Kind == "poll_vote" && metadata.State == "" {
+				var payload struct {
+					LinkedMessage *linkedchat.Message `json:"linkedMessage"`
+				}
+				if json.Unmarshal([]byte(original.Payload), &payload) == nil && payload.LinkedMessage != nil {
+					metadata.TargetPreview = payload.LinkedMessage.Title
+					metadata.Options = append([]linkedchat.Option(nil), metadata.Options...)
+					for i := range metadata.Options {
+						for _, option := range payload.LinkedMessage.Options {
+							if option.ID == metadata.Options[i].ID {
+								metadata.Options[i].Label = option.Label
+							}
+						}
+					}
+				}
+			}
+		}
+		if metadata.Kind == "poll_vote" && metadata.State == "" {
+			for _, option := range metadata.Options {
+				if option.Label == "" {
+					metadata.State = "target_unavailable"
+				}
+			}
 		}
 		msg.Message = &metadata
 	}
@@ -260,12 +294,12 @@ func (s *linkedChatService) Receive(channelID int64, msg linkedchat.Incoming) er
 		}
 	}
 	name := strings.TrimSpace(msg.Name)
-	if name == "" {
+	if name == "" && !knownCustomer {
 		name = s.displayName() + " " + strings.Split(msg.Chat, "@")[0]
 	}
 	external := openidentity.ExternalUser{ExternalSource: s.externalSource(),
 		ExternalID: whatsAppIdentity(channelID, msg.Account, msg.Chat), ExternalName: name}
-	if msg.History || msg.FromMe || msg.Message != nil {
+	if msg.History || msg.FromMe || !msg.Message.Textual() {
 		return s.importMessage(channel, msg, external)
 	}
 	conversation, err := ConversationService.Create(external, channel.ID, channel.AIAgentID)
@@ -275,13 +309,21 @@ func (s *linkedChatService) Receive(channelID int64, msg linkedchat.Incoming) er
 	if conversation.ChannelID != channel.ID {
 		return errorsx.InvalidParamI18n(s.errorKey("identityMismatch"))
 	}
-	payload, _ := json.Marshal(map[string]any{"whatsappMessageId": msg.ID, "whatsappChat": msg.Chat, "timestamp": msg.SentAt})
+	payload, _ := json.Marshal(map[string]any{"whatsappMessageId": msg.ID, "whatsappChat": msg.Chat, "timestamp": msg.SentAt, "linkedMessage": msg.Message})
 	_, err = MessageService.SendCustomerMessage(conversation.ID, clientID, enums.IMMessageTypeText, msg.Text, string(payload), external)
 	return err
 }
 
 // Import bypasses all send hooks, welcome messages, AI dispatch and outboxes.
 func (s *linkedChatService) importMessage(channel *models.Channel, incoming linkedchat.Incoming, external openidentity.ExternalUser) error {
+	if incoming.FromMe && !incoming.History && !incoming.Message.Passive() {
+		if identity := repositories.CustomerIdentityRepository.GetBy(sqls.DB(), external.ExternalSource, external.ExternalID); identity != nil {
+			if c := repositories.ConversationRepository.FindOne(sqls.DB(), sqls.NewCnd().Eq("customer_id", identity.CustomerID).Eq("channel_id", channel.ID).Desc("id")); c != nil {
+				unlock := ConversationDelegationService.lockDelivery(c.ID)
+				defer unlock()
+			}
+		}
+	}
 	var conversation *models.Conversation
 	var message *models.Message
 	created := false
@@ -289,6 +331,20 @@ func (s *linkedChatService) importMessage(channel *models.Channel, incoming link
 		customerID := int64(0)
 		if identity := repositories.CustomerIdentityRepository.GetBy(ctx.Tx, external.ExternalSource, external.ExternalID); identity != nil {
 			customerID = identity.CustomerID
+			if s.kind != "messenger" && strings.TrimSpace(incoming.Name) != "" {
+				current := repositories.CustomerRepository.Get(ctx.Tx, customerID)
+				if current != nil {
+					updates := contactProfileUpdates(current, whatsapp.ContactProfile{Name: incoming.Name}, 0, "")
+					if err := repositories.CustomerRepository.Updates(ctx.Tx, customerID, updates); err != nil {
+						return err
+					}
+					if name, ok := updates["name"].(string); ok {
+						if err := CustomerService.syncConversationCustomerName(ctx.Tx, customerID, name, nil, time.Now()); err != nil {
+							return err
+						}
+					}
+				}
+			}
 		} else {
 			var err error
 			customerID, err = CustomerService.EnsureExternalCustomer(ctx, external)
@@ -304,8 +360,11 @@ func (s *linkedChatService) importMessage(channel *models.Channel, incoming link
 		conversation = repositories.ConversationRepository.FindOne(ctx.Tx, sqls.NewCnd().Eq("customer_id", customerID).Eq("channel_id", channel.ID).Desc("id"))
 		if conversation == nil || (!incoming.History && !incoming.FromMe && conversation.Status == enums.IMConversationStatusClosed) {
 			agent := repositories.AIAgentRepository.Get(ctx.Tx, channel.AIAgentID)
-			if agent == nil {
+			if agent == nil || agent.Status == enums.StatusDeleted {
 				return errorsx.InvalidParamI18n("error.e0002")
+			}
+			if agent.Status == enums.StatusDisabled {
+				agent.ServiceMode = enums.IMConversationServiceModeHumanOnly
 			}
 			conversation = &models.Conversation{ChannelID: channel.ID, AIAgentID: agent.ID, CustomerID: customerID,
 				CustomerName: ConversationService.getCustomerName(ctx.Tx, customerID), ServiceMode: agent.ServiceMode,
@@ -327,6 +386,9 @@ func (s *linkedChatService) importMessage(channel *models.Channel, incoming link
 			AuditFields: utils.BuildAuditFields(nil)}
 		if incoming.Message != nil {
 			message.MessageType = enums.IMMessageTypeAttachment
+			if incoming.Message.Kind == "text" || incoming.Message.Kind == "reply" {
+				message.MessageType = enums.IMMessageTypeText
+			}
 			if incoming.Message.Kind == "image" || incoming.Message.Kind == "sticker" {
 				message.MessageType = enums.IMMessageTypeImage
 			}
@@ -338,13 +400,13 @@ func (s *linkedChatService) importMessage(channel *models.Channel, incoming link
 		if err := repositories.MessageRepository.Create(ctx.Tx, message); err != nil {
 			return err
 		}
-		if !incoming.History && !incoming.FromMe && incoming.Message != nil {
+		if !incoming.History && !incoming.FromMe && incoming.Message != nil && !incoming.Message.Passive() {
 			unread, customerUnread, err := MessageService.handleReadState(ctx, enums.IMSenderTypeCustomer, conversation, nil, message, &external)
 			if err != nil {
 				return err
 			}
 			updates := map[string]any{"agent_unread_count": unread, "customer_unread_count": customerUnread}
-			if conversation.Status == enums.IMConversationStatusAIServing && incoming.Message.Kind != "reaction" {
+			if conversation.Status == enums.IMConversationStatusAIServing {
 				updates["status"] = enums.IMConversationStatusPending
 				updates["handoff_at"] = time.Now()
 				updates["handoff_reason"] = "whatsapp_media_received"
@@ -353,16 +415,16 @@ func (s *linkedChatService) importMessage(channel *models.Channel, incoming link
 				return err
 			}
 		}
-		if err := repositories.UpdateWhatsAppImportedSummary(ctx.Tx, conversation.ID, message, limitText(buildMessageSummary(message.MessageType, message.Content), 255)); err != nil {
-			return err
-		}
-		if incoming.Message == nil || incoming.Message.Kind != "reaction" {
+		if !incoming.Message.Passive() {
+			if err := repositories.UpdateWhatsAppImportedSummary(ctx.Tx, conversation.ID, message, limitText(buildMessageSummary(message.MessageType, message.Content), 255)); err != nil {
+				return err
+			}
 			if err := ConversationWorkService.onMessage(ctx, message); err != nil {
 				return err
 			}
 		}
 		// A live phone reply is human takeover; historical outgoing messages are not.
-		if incoming.FromMe && !incoming.History && conversation.Status == enums.IMConversationStatusAIServing && (incoming.Message == nil || incoming.Message.Kind != "reaction") {
+		if incoming.FromMe && !incoming.History && conversation.Status == enums.IMConversationStatusAIServing && !incoming.Message.Passive() {
 			return repositories.ConversationRepository.Updates(ctx.Tx, conversation.ID, map[string]any{
 				"status": enums.IMConversationStatusPending, "handoff_at": sentAt,
 				"handoff_reason": s.channelType() + "_phone_reply", "updated_at": time.Now(),
@@ -379,7 +441,7 @@ func (s *linkedChatService) importMessage(channel *models.Channel, incoming link
 	}
 	WsService.PublishMessageCreated(conversation, message)
 	WsService.PublishConversationChanged(conversation, enums.IMRealtimeEventConversationUpdated)
-	if !incoming.History {
+	if !incoming.History && !incoming.Message.Passive() {
 		if err := ConversationMemoryService.Queue(conversation.ID); err != nil {
 			slog.Warn("conversation memory enqueue failed", "conversation_id", conversation.ID)
 		}
@@ -458,6 +520,8 @@ func (s *linkedChatService) DispatchPendingOutbox() {
 }
 
 func (s *linkedChatService) sendOutbox(item models.ChannelMessageOutbox) error {
+	unlock := ConversationDelegationService.lockDelivery(item.ConversationID)
+	defer unlock()
 	message := MessageService.Get(item.MessageID)
 	conversation := ConversationService.Get(item.ConversationID)
 	if message == nil || conversation == nil {
@@ -467,9 +531,17 @@ func (s *linkedChatService) sendOutbox(item models.ChannelMessageOutbox) error {
 	if channel == nil || channel.Status != enums.StatusOk || channel.ChannelType != s.channelType() {
 		return s.finishOutbox(item, "ignored", "channel_disabled")
 	}
+	if message.SenderType == enums.IMSenderTypeAI && !reception.AutomaticMessagesAllowed(conversation, AIAgentService.Get(message.SenderID)) {
+		return s.finishOutbox(item, "ignored", "automatic_reception_paused")
+	}
 	if message.RecalledAt != nil || message.SendStatus == enums.IMMessageStatusRecalled ||
-		(message.SenderType == enums.IMSenderTypeAI && conversation.Status != enums.IMConversationStatusAIServing) {
+		(message.SenderType == enums.IMSenderTypeAI && message.DelegationRevision == 0 && conversation.Status != enums.IMConversationStatusAIServing) {
 		return s.finishOutbox(item, "ignored", "reply_cancelled")
+	}
+	if message.DelegationRevision > 0 {
+		if err := ConversationDelegationService.validateDelivery(sqls.DB(), conversation, message.DelegationRevision, message.SenderID, message.ReplyToCustomerMessageID); err != nil {
+			return s.finishOutbox(item, "ignored", "delegation_cancelled")
+		}
 	}
 	identity := ConversationService.GetConversationExternalIdentity(conversation)
 	if identity == nil || identity.ExternalSource != s.externalSource() {
@@ -549,7 +621,23 @@ func (s *linkedChatService) finishOutbox(item models.ChannelMessageOutbox, statu
 			return err
 		}
 		message.SendStatus = messageStatus
-		return ConversationWorkService.onMessage(tx, message)
+		if err := ConversationWorkService.onMessage(tx, message); err != nil {
+			return err
+		}
+		if status == "ignored" && reason == "send_failed" && message.DelegationRevision > 0 {
+			c, err := repositories.LockConversationWork(tx.Tx, item.ConversationID)
+			if err != nil {
+				return err
+			}
+			d, err := repositories.GetConversationDelegation(tx.Tx, c.ID)
+			if err != nil {
+				return err
+			}
+			if d.Revision == message.DelegationRevision {
+				return ConversationDelegationService.stopTx(tx, c, d, "sending_failed", "", 0, true)
+			}
+		}
+		return nil
 	})
 	if err == nil {
 		if message := MessageService.Get(item.MessageID); message != nil {

@@ -9,7 +9,13 @@ import (
 )
 
 func Init() {
+	if err := services.SalesExperienceService.Initialize(); err != nil {
+		slog.Error("sales experience initialization failed", "error", err)
+	}
 	c := cron.New()
+	addFunc(c, "@every 3s", services.ConversationDelegationService.ProcessPending)
+	addFunc(c, "@every 2s", services.SalesExperienceService.ProcessPending)
+	addFunc(c, "@every 3s", services.AutomationService.ProcessPending)
 	addFunc(c, "@every 30s", services.ConversationWorkService.ProcessDue)
 	addFunc(c, "@every 30s", services.SalesLeadService.ProcessDue)
 	addFunc(c, "@every 5s", services.ConversationMemoryService.ProcessPending)

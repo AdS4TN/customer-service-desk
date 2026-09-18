@@ -14,12 +14,14 @@ export type ImRealtimeEnvelope = {
       customerSessionToken?: string
       expiresAt?: string
       requestId?: string
+      recalledAt?: string
     }
   payload?: RealtimeMessageCreatedPayload<ImMessage> &
     RealtimeConversationPatch & {
       customerSessionToken?: string
       expiresAt?: string
       requestId?: string
+      recalledAt?: string
     }
 }
 

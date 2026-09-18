@@ -2,6 +2,7 @@ package builders
 
 import (
 	"strings"
+	"time"
 
 	"agent-desk/internal/models"
 	"agent-desk/internal/pkg/dto/response"
@@ -20,6 +21,7 @@ func BuildConversation(item *models.Conversation) response.ConversationResponse 
 func BuildConversationWithLocale(item *models.Conversation, locale string) response.ConversationResponse {
 	agentReadState, customerReadState := services.ConversationReadStateService.GetConversationReadStates(item.ID)
 	ret := response.ConversationResponse{
+		CustomerAvatar:            item.CustomerAvatar,
 		WorkStatus:                item.WorkStatus,
 		WorkRevision:              item.WorkRevision,
 		PendingSince:              utils.FormatTimePtr(item.PendingSince),
@@ -175,6 +177,12 @@ func buildMessageWithReadStatesAndLocale(item *models.Message, agentReadState, c
 		AgentReadAt:     readMessageAt(item, agentReadState),
 		RecalledAt:      utils.FormatTimePtr(item.RecalledAt),
 		QuotedMessageID: item.QuotedMessageID,
+	}
+	if item.RecalledAt == nil && item.SendStatus != enums.IMMessageStatusRecalled &&
+		(item.SenderType == enums.IMSenderTypeAgent || item.SenderType == enums.IMSenderTypeCustomer) {
+		if deadline := services.MessageRecallDeadline(item); deadline != nil {
+			ret.RecallableUntil = deadline.Format(time.RFC3339Nano)
+		}
 	}
 	if item.SenderID > 0 {
 		if item.SenderType == enums.IMSenderTypeAI {

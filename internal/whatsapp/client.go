@@ -31,21 +31,24 @@ type Status = linkedchat.Status
 type Incoming = linkedchat.Incoming
 
 type Session struct {
-	op             sync.Mutex
-	mu             sync.RWMutex
-	status         Status
-	history        historySync
-	historyTargets func(string) ([]HistoryRequest, error)
-	historyMissing func(Incoming) bool
-	historyDB      *sql.DB
-	historyRunning bool
-	lastHistoryRun time.Time
-	store          *sqlstore.Container
-	client         *whatsmeow.Client
-	cancel         context.CancelFunc
-	onMessage      func(Incoming) error
-	mediaJobs      chan func()
-	mediaStop      chan struct{}
+	onProfile       func(ContactProfile) error
+	profileRefresh  map[string]time.Time
+	profileInflight map[string]bool
+	op              sync.Mutex
+	mu              sync.RWMutex
+	status          Status
+	history         historySync
+	historyTargets  func(string) ([]HistoryRequest, error)
+	historyMissing  func(Incoming) bool
+	historyDB       *sql.DB
+	historyRunning  bool
+	lastHistoryRun  time.Time
+	store           *sqlstore.Container
+	client          *whatsmeow.Client
+	cancel          context.CancelFunc
+	onMessage       func(Incoming) error
+	mediaJobs       chan func()
+	mediaStop       chan struct{}
 }
 
 // Each channel owns one private database containing both credentials and Signal keys.
@@ -152,6 +155,7 @@ func (s *Session) Connect() error {
 			}
 			s.set(ctx, Status{State: "connected", Account: account})
 			go s.syncHistoryAutomatically(ctx, account)
+			go s.syncContactProfiles(ctx, client, account)
 		case *events.Disconnected:
 			status := s.Status()
 			if status.State == "connected" || status.State == "connecting" {
@@ -169,6 +173,14 @@ func (s *Session) Connect() error {
 			s.receiveEvent(ctx, client, evt, "")
 		case *events.HistorySync:
 			s.receiveHistory(ctx, client, evt.Data, evt.Notification)
+		case *events.Contact:
+			s.queueContactProfile(ctx, client, evt.JID, true)
+		case *events.PushName:
+			s.queueContactProfile(ctx, client, evt.JID, true)
+		case *events.BusinessName:
+			s.queueContactProfile(ctx, client, evt.JID, true)
+		case *events.Picture:
+			s.queueContactProfile(ctx, client, evt.JID, true)
 		}
 	})
 	var qr <-chan whatsmeow.QRChannelItem
@@ -270,6 +282,9 @@ func (s *Session) Close() error {
 }
 
 func (s *Session) Send(ctx context.Context, account, chat, id, text string) error {
+	if OutboundMessagesDisabled {
+		return ErrOutboundDisabled
+	}
 	s.op.Lock()
 	defer s.op.Unlock()
 	status := s.Status()
@@ -293,7 +308,7 @@ func IsPrivateChat(jid types.JID) bool {
 
 func ParseIncoming(evt *events.Message, account string) (Incoming, bool) {
 	if evt == nil || evt.Message == nil || account == "" || evt.Info.ID == "" || evt.Info.IsGroup ||
-		evt.IsEdit || !IsPrivateChat(evt.Info.Chat) {
+		!IsPrivateChat(evt.Info.Chat) {
 		return Incoming{}, false
 	}
 	text, metadata, _ := parseContent(evt)
@@ -312,6 +327,8 @@ func (s *Session) receiveEvent(ctx context.Context, client *whatsmeow.Client, ev
 	if !ok || s.onMessage == nil {
 		return 0
 	}
+	text, metadata, media := decodeContent(ctx, client, evt)
+	msg.Text, msg.Message = text, metadata
 	// Prefer the phone-number identity across both PN and LID history/live events.
 	chat := evt.Info.Chat.ToNonAD()
 	if chat.Server == types.HiddenUserServer {
@@ -344,8 +361,8 @@ func (s *Session) receiveEvent(ctx context.Context, client *whatsmeow.Client, ev
 		s.mu.Unlock()
 		return -1
 	}
+	s.queueContactProfile(ctx, client, chat, false)
 	if msg.Message != nil && msg.Message.State == "pending" {
-		_, _, media := parseContent(evt)
 		s.queueMedia(ctx, client, msg, media)
 	}
 	if evt.UnavailableRequestID != "" {

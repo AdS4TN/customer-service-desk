@@ -81,6 +81,7 @@ export type ImMessage = {
   agentRead: boolean
   agentReadAt?: string
   recalledAt?: string
+  recallableUntil?: string
   quotedMessageId?: number
 }
 
@@ -424,6 +425,15 @@ export function sendImMessage(payload: {
     ...createRequestOptions({
       method: "POST",
       body: JSON.stringify(payload),
+    }),
+  })
+}
+
+export function recallImMessage(messageId: number) {
+  return request<ImMessage>("/api/message/recall", {
+    ...createRequestOptions({
+      method: "POST",
+      body: JSON.stringify({ messageId }),
     }),
   })
 }

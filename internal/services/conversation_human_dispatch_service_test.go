@@ -122,8 +122,8 @@ func TestConversationHumanDispatchHumanOnlyCreateOffHoursUsesGlobalPendingPool(t
 	}
 
 	message := services.MessageService.FindOne(sqls.NewCnd().Eq("conversation_id", conversation.ID).Desc("id"))
-	if message == nil || message.Content != services.HandoffWaitingMessage {
-		t.Fatalf("expected waiting message, got %+v", message)
+	if message != nil {
+		t.Fatalf("human-only reception must not send an automatic waiting message, got %+v", message)
 	}
 }
 

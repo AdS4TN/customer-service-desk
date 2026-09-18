@@ -20,6 +20,7 @@ export type MergeableImMessage = {
   agentRead: boolean
   agentReadAt?: string
   recalledAt?: string
+  recallableUntil?: string
   quotedMessageId?: number
 }
 

@@ -31,7 +31,7 @@ export function LeadHistory({ item }: { item: SalesLead }) {
     <summary className="cursor-pointer font-medium">{t("lead.history")}</summary>
     <ol className="flex flex-col gap-4 py-3">
       {item.events.map((event) => <li key={event.id} className="flex min-w-0 flex-col gap-1">
-        <p className="text-muted-foreground">{event.followUp ? t("leadWork.recorded") : t(`lead.events.${event.kind}`)} · {formatDateTime(event.createdAt)}{event.actorId ? ` · #${event.actorId}` : ""}</p>
+        <p className="text-muted-foreground">{event.followUp ? t("leadWork.recorded") : event.kind === "automation" ? t("automation.title") : t(`lead.events.${event.kind}`)} · {formatDateTime(event.createdAt)}{event.actorId ? ` · #${event.actorId}` : ""}</p>
         {event.followUp && <>
           <p>{t(`lead.statuses.${event.followUp.status}`)} · {t("lead.owner")}: #{event.followUp.ownerId}</p>
           <p className="whitespace-pre-wrap break-words">{event.followUp.result}</p>

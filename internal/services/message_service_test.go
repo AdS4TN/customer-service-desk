@@ -38,6 +38,39 @@ func ptrTime(v time.Time) *time.Time {
 	return &v
 }
 
+func TestMessageRecallDeadlineUsesSentAtAndFallsBackToCreatedAt(t *testing.T) {
+	createdAt := time.Date(2026, time.September, 16, 12, 0, 0, 0, time.UTC)
+	sentAt := createdAt.Add(time.Minute)
+
+	deadline := MessageRecallDeadline(&models.Message{
+		SentAt:      &sentAt,
+		AuditFields: models.AuditFields{CreatedAt: createdAt},
+	})
+	if deadline == nil || !deadline.Equal(sentAt.Add(2*time.Minute)) {
+		t.Fatalf("deadline=%v want %v", deadline, sentAt.Add(2*time.Minute))
+	}
+
+	deadline = MessageRecallDeadline(&models.Message{
+		AuditFields: models.AuditFields{CreatedAt: createdAt},
+	})
+	if deadline == nil || !deadline.Equal(createdAt.Add(2*time.Minute)) {
+		t.Fatalf("fallback deadline=%v want %v", deadline, createdAt.Add(2*time.Minute))
+	}
+}
+
+func TestRecallMessageRejectsExpiredMessageBeforeWriting(t *testing.T) {
+	sentAt := time.Now().Add(-MessageRecallWindow - time.Second)
+	message := &models.Message{ID: 1, ConversationID: 2, SentAt: &sentAt}
+	conversation := &models.Conversation{ID: 2}
+
+	if _, err := MessageService.recallMessage(message, conversation, enums.IMSenderTypeAgent, 3, "agent", "recall"); err == nil {
+		t.Fatal("expected expired recall to be rejected")
+	}
+	if message.RecalledAt != nil || message.SendStatus == enums.IMMessageStatusRecalled {
+		t.Fatal("expired message was mutated")
+	}
+}
+
 func setupMessageWelcomeTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -218,6 +251,51 @@ func TestSendCustomerMessageStoresRequestIDOnMessageAndEvent(t *testing.T) {
 	}
 	if event.RequestID != "trace-123" {
 		t.Fatalf("event.RequestID=%q want %q", event.RequestID, "trace-123")
+	}
+}
+
+func TestRecallCustomerMessageRequiresOwnerAndMatchingChannel(t *testing.T) {
+	db := setupMessageWelcomeTestDB(t)
+	aiAgent := createWelcomeTestAIAgent(t, db, "")
+	external := welcomeTestExternalUser("recall-owner")
+	conversation, err := ConversationService.Create(external, 11, aiAgent.ID)
+	if err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	message, err := MessageService.SendCustomerMessage(
+		conversation.ID,
+		"recall-customer-message",
+		enums.IMMessageTypeText,
+		"please recall this",
+		"",
+		external,
+	)
+	if err != nil {
+		t.Fatalf("send customer message: %v", err)
+	}
+
+	other := welcomeTestExternalUser("recall-other")
+	if _, err := MessageService.RecallCustomerMessage(message.ID, conversation.ChannelID, &other); err == nil {
+		t.Fatal("expected another customer to be unable to recall the message")
+	}
+	if _, err := MessageService.RecallCustomerMessage(message.ID, conversation.ChannelID+1, &external); err == nil {
+		t.Fatal("expected a mismatched channel to be unable to recall the message")
+	}
+
+	recalled, err := MessageService.RecallCustomerMessage(message.ID, conversation.ChannelID, &external)
+	if err != nil {
+		t.Fatalf("recall own message: %v", err)
+	}
+	if recalled.RecalledAt == nil || recalled.SendStatus != enums.IMMessageStatusRecalled {
+		t.Fatalf("message was not recalled: %#v", recalled)
+	}
+
+	var stored models.Message
+	if err := db.First(&stored, message.ID).Error; err != nil {
+		t.Fatalf("find recalled message: %v", err)
+	}
+	if stored.RecalledAt == nil || stored.SendStatus != enums.IMMessageStatusRecalled {
+		t.Fatalf("recalled state was not persisted: %#v", stored)
 	}
 }
 

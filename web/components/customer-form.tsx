@@ -9,16 +9,21 @@ import {
   type Resolver,
   type UseFormReturn,
 } from "react-hook-form"
-import { PlusIcon, Trash2Icon } from "lucide-react"
+import { PlusIcon, Trash2Icon, XIcon } from "lucide-react"
 import { z } from "zod/v4"
 
 import { CompanyPicker } from "@/components/company-picker"
 import { OptionCombobox } from "@/components/option-combobox"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupButton } from "@/components/ui/input-group"
+import { normalizeCustomerTags } from "@/lib/customer-tags"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   Field,
   FieldContent,
   FieldError,
+  FieldGroup,
   FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -53,6 +58,8 @@ const contactRowSchema = z.object({
 })
 
 export type CustomerFormValues = {
+  manualTags: string[]
+  manualTagDraft: string
   name: string
   gender: (typeof genderValueOptions)[number]
   companyId: string
@@ -78,6 +85,8 @@ function defaultContactRow(isPrimary: boolean): CustomerContactFormRow {
 }
 
 const emptyCustomerForm: CustomerFormValues = {
+  manualTags: [],
+  manualTagDraft: "",
   name: "",
   gender: "0",
   companyId: "0",
@@ -88,6 +97,8 @@ const emptyCustomerForm: CustomerFormValues = {
 function buildCustomerMainFromAdmin(item: AdminCustomer | null): Omit<CustomerFormValues, "contacts"> {
   if (!item) {
     return {
+      manualTags: [],
+      manualTagDraft: "",
       name: "",
       gender: "0",
       companyId: "0",
@@ -95,6 +106,8 @@ function buildCustomerMainFromAdmin(item: AdminCustomer | null): Omit<CustomerFo
     }
   }
   return {
+    manualTags: item.manualTags ?? [],
+    manualTagDraft: "",
     name: item.name,
     gender: String(item.gender) as "0" | "1" | "2",
     companyId: String(item.companyId ?? 0),
@@ -200,7 +213,7 @@ function CustomerFormFields({
     <div className="space-y-8">
       <div className="space-y-3">
         <h3 className="text-sm font-semibold text-muted-foreground">{t("customerForm.sectionCustomer")}</h3>
-        <div className="space-y-4">
+        <FieldGroup>
           <Field data-invalid={!!errors.name}>
             <FieldLabel htmlFor={id("name")}>{t("customerForm.name")}</FieldLabel>
             <FieldContent>
@@ -266,7 +279,46 @@ function CustomerFormFields({
               <FieldError errors={[errors.remark]} />
             </FieldContent>
           </Field>
-        </div>
+          <Field>
+            <FieldLabel htmlFor={id("manual-tags")}>{t("customerForm.manualTags")}</FieldLabel>
+            <InputGroup>
+              <InputGroupInput
+                id={id("manual-tags")}
+                placeholder={t("customerForm.tagPlaceholder")}
+                {...register("manualTagDraft")}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return
+                  event.preventDefault()
+                  if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
+                  setValue("manualTags", normalizeCustomerTags([...getValues("manualTags"), getValues("manualTagDraft")]), { shouldDirty: true })
+                  setValue("manualTagDraft", "", { shouldDirty: true })
+                }}
+              />
+              <InputGroupAddon align="inline-end">
+                <InputGroupButton type="button" size="icon-xs" aria-label={t("customerForm.addTag")} title={t("customerForm.addTag")}
+                  disabled={!watch("manualTagDraft").trim()}
+                  onClick={() => {
+                    setValue("manualTags", normalizeCustomerTags([...getValues("manualTags"), getValues("manualTagDraft")]), { shouldDirty: true })
+                    setValue("manualTagDraft", "", { shouldDirty: true })
+                  }}>
+                  <PlusIcon />
+                </InputGroupButton>
+              </InputGroupAddon>
+            </InputGroup>
+            <div className="flex flex-wrap gap-2">
+              {watch("manualTags").map((tag, index) => (
+                <Badge key={tag} variant="secondary" className="max-w-full gap-1 whitespace-normal">
+                  <span className="min-w-0 break-all">{tag}</span>
+                  <Button type="button" variant="ghost" size="icon-xs" className="shrink-0"
+                    aria-label={t("customerForm.removeTag", { tag })} title={t("customerForm.removeTag", { tag })}
+                    onClick={() => setValue("manualTags", getValues("manualTags").filter((_, i) => i !== index), { shouldDirty: true })}>
+                    <XIcon />
+                  </Button>
+                </Badge>
+              ))}
+            </div>
+          </Field>
+        </FieldGroup>
       </div>
 
       <div className="space-y-3">
@@ -382,6 +434,7 @@ export type CustomerFormProps = {
   remarkRows?: number
   className?: string
   onLoadingDetailChange?: (loading: boolean) => void
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 export function CustomerForm({
@@ -392,12 +445,17 @@ export function CustomerForm({
   remarkRows = 4,
   className,
   onLoadingDetailChange,
+  onDirtyChange,
 }: CustomerFormProps) {
   const t = useI18n()
   const [loadingDetail, setLoadingDetail] = useState(() => Boolean(itemId))
+  const [loadError, setLoadError] = useState(false)
+  const [reload, setReload] = useState(0)
   const customerFormSchema = useMemo(
     () =>
       z.object({
+        manualTags: z.array(z.string()),
+        manualTagDraft: z.string(),
         name: z.string().trim().min(1, t("customerForm.nameRequired")),
         gender: z.enum(genderValueOptions, { message: t("customerForm.genderRequired") }),
         companyId: z.string().trim().regex(/^\d+$/, t("customerForm.companyRequired")),
@@ -416,10 +474,13 @@ export function CustomerForm({
     defaultValues: emptyCustomerForm,
   })
   const { handleSubmit, reset } = form
+  const dirty = form.formState.isDirty
+  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
   const onLoadingDetailChangeRef = useRef(onLoadingDetailChange)
   onLoadingDetailChangeRef.current = onLoadingDetailChange
 
   useEffect(() => {
+    let active = true
     async function loadDetail() {
       const notify = (loading: boolean) => {
         onLoadingDetailChangeRef.current?.(loading)
@@ -431,27 +492,34 @@ export function CustomerForm({
         return
       }
       setLoadingDetail(true)
+      setLoadError(false)
       notify(true)
       try {
         const [customer, contacts] = await Promise.all([
           fetchCustomer(itemId),
           fetchCustomerContacts(itemId),
         ])
+        if (!active) return
+        if (!customer) throw new Error("missing customer")
         reset({
           ...buildCustomerMainFromAdmin(customer),
           contacts: buildContactsFromApi(contacts),
         })
-      } finally {
-        setLoadingDetail(false)
         notify(false)
+      } catch {
+        if (active) { setLoadError(true); notify(true) }
+      } finally {
+        if (active) setLoadingDetail(false)
       }
     }
     void loadDetail()
-  }, [itemId, reset])
+    return () => { active = false }
+  }, [itemId, reset, reload, form])
 
   async function onFormSubmit(values: CustomerFormValues) {
     const contacts = normalizeContactsForSubmit(values.contacts as CustomerContactFormRow[])
     const body: SaveCustomerProfilePayload = {
+      manualTags: normalizeCustomerTags([...values.manualTags, values.manualTagDraft]),
       name: values.name.trim(),
       gender: Number(values.gender),
       companyId: Number(values.companyId),
@@ -477,6 +545,8 @@ export function CustomerForm({
       </div>
     )
   }
+
+  if (loadError) return <Alert><AlertDescription>{t("customerForm.loadFailed")}<Button type="button" variant="outline" size="sm" onClick={() => setReload((value) => value + 1)}>{t("customerForm.retry")}</Button></AlertDescription></Alert>
 
   return (
     <form id={formId} onSubmit={handleSubmit(onFormSubmit)} className={className}>

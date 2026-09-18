@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -71,8 +72,59 @@ func TestCopilotUsesPublishedPolicyAndMemoryWithoutDispatch(t *testing.T) {
 	}
 }
 
+func TestCopilotRoutesOnePublishedSkillAndReportsPrivateTrace(t *testing.T) {
+	db, c, m := setupCopilotTest(t)
+	if err := db.AutoMigrate(&models.SkillDefinition{}); err != nil {
+		t.Fatal(err)
+	}
+	skill := models.SkillDefinition{
+		Name: "Clarify comparison basis", Description: "Use when a customer challenges price without a comparable scope.",
+		Instruction: "Clarify what is included in the competing offer before explaining value.", Examples: `["Customer says another supplier is cheaper without sharing the compared scope"]`, Status: enums.StatusOk,
+	}
+	if err := db.Create(&skill).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.AIAgent{}).Where("id = ?", c.AIAgentID).Update("skill_ids", strconv.FormatInt(skill.ID, 10)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AIAgentService.PublishAIAgent(c.AIAgentID, &dto.AuthPrincipal{UserID: 1, Username: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	s := &conversationCopilotService{complete: func(_ context.Context, _ models.AIConfig, system, input string) (*ai.ChatCompletionResult, error) {
+		calls++
+		switch calls {
+		case 1:
+			if !strings.Contains(system, "strict sales Skill router") || !strings.Contains(input, skill.Name) {
+				t.Fatal("routing catalog missing")
+			}
+			return &ai.ChatCompletionResult{Content: `{"skillId":` + strconv.FormatInt(skill.ID, 10) + `,"reason":"The comparison scope is unclear."}`}, nil
+		case 2:
+			if !strings.Contains(system, skill.Instruction) || !strings.Contains(system, "No tools are available") {
+				t.Fatal("selected Skill or shadow boundary missing")
+			}
+			return &ai.ChatCompletionResult{Content: "Could you share what the other quote includes so we can compare the same scope?"}, nil
+		default:
+			t.Fatal("unexpected model call")
+			return nil, nil
+		}
+	}}
+	r, err := s.Suggest(context.Background(), c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || r.SkillStatus != "matched" || len(r.Skills) != 1 || r.Skills[0].ID != skill.ID || len(r.Tools) != 1 || r.Tools[0].Code != "builtin/conversation_context" {
+		t.Fatalf("unexpected shadow trace: %+v", r)
+	}
+	var count int64
+	db.Model(&models.Message{}).Where("conversation_id = ?", c.ID).Count(&count)
+	if count != 1 || r.LastMessageID != m.ID {
+		t.Fatal("shadow suggestion wrote a message")
+	}
+}
+
 func TestCopilotRejectsConcurrentChangesAndReleasesLock(t *testing.T) {
-	for _, kind := range []string{"message", "assignment", "closed", "recall", "customer", "agent_disabled"} {
+	for _, kind := range []string{"message", "assignment", "closed", "recall", "customer", "agent_deleted"} {
 		t.Run(kind, func(t *testing.T) {
 			db, c, m := setupCopilotTest(t)
 			s := &conversationCopilotService{complete: func(context.Context, models.AIConfig, string, string) (*ai.ChatCompletionResult, error) {
@@ -87,8 +139,8 @@ func TestCopilotRejectsConcurrentChangesAndReleasesLock(t *testing.T) {
 					db.Model(&c).Update("customer_id", 99)
 				case "recall":
 					db.Model(&m).Update("recalled_at", time.Now())
-				case "agent_disabled":
-					db.Model(&models.AIAgent{}).Where("id = ?", c.AIAgentID).Update("status", enums.StatusDisabled)
+				case "agent_deleted":
+					db.Model(&models.AIAgent{}).Where("id = ?", c.AIAgentID).Update("status", enums.StatusDeleted)
 				}
 				return &ai.ChatCompletionResult{Content: "stale"}, nil
 			}}
@@ -135,7 +187,7 @@ func TestCopilotKnowledgeFailureNeverGeneratesAndReturnsUsedSources(t *testing.T
 	}
 	fail = false
 	result, err := s.Suggest(context.Background(), c.ID)
-	if err != nil || calls != 1 || len(result.Sources) != 1 || result.Sources[0].ChunkID != 10 {
+	if err != nil || calls != 1 || len(result.Sources) != 1 || result.Sources[0].ChunkID != 10 || len(result.Tools) != 2 || result.Tools[1].Code != "builtin/knowledge_retrieve" || result.Tools[1].Status != "matched" {
 		t.Fatalf("used evidence missing: %v", err)
 	}
 }

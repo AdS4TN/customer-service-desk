@@ -7,6 +7,14 @@ import (
 
 // Models 注册所有需要迁移和代码生成的模型。
 var Models = []any{
+	&ConversationDelegation{},
+	&ConversationDelegationEvent{},
+	&SalesExperienceCase{},
+	&SalesExperienceSkill{},
+	&SalesExperienceRevision{},
+	&SalesExperienceJob{},
+	&AutomationRule{},
+	&AutomationRun{},
 	&Migration{},
 	&Organization{},
 	&OrganizationMember{},
@@ -244,6 +252,13 @@ type Company struct {
 //
 //	用于存储客户稳定画像信息，不包含平台身份映射和多联系方式明细。
 type Customer struct {
+	OwnerUserID         int64        `gorm:"not null;default:0;index"`
+	Avatar              string       `gorm:"-"`
+	AvatarAssetID       int64        `gorm:"not null;default:0"`
+	AvatarHash          string       `gorm:"type:varchar(64)"`
+	AvatarState         string       `gorm:"type:varchar(30)"`
+	ChannelName         string       `gorm:"type:varchar(200)"`
+	ManualTags          string       `gorm:"type:text"`
 	AIProfileProjection string       `gorm:"column:ai_profile_projection;type:text"`      // Ownership of AI-filled fields; never used to resolve identity.
 	ID                  int64        `gorm:"primaryKey;autoIncrement"`                    // ID 为客户主键。
 	UserID              int64        `gorm:"type:bigint;not null;default:0;index"`        // UserID 为关联的统一登录账号ID，0表示未绑定。
@@ -396,6 +411,8 @@ type Tag struct {
 
 // Conversation 客服会话。
 type Conversation struct {
+	DelegationManaged     bool                         `gorm:"not null;default:false"`
+	CustomerAvatar        string                       `gorm:"-"`
 	WorkStatus            enums.ConversationWorkStatus `gorm:"type:varchar(30);not null;default:'waiting_customer';index"`
 	WorkRevision          int64                        `gorm:"not null;default:0"`
 	LastCustomerMessageID int64                        `gorm:"not null;default:0"`
@@ -456,6 +473,7 @@ type ConversationReadState struct {
 
 // Message 会话消息。
 type Message struct {
+	DelegationRevision       int64                 `gorm:"not null;default:0"`
 	ReplyToCustomerMessageID int64                 `gorm:"not null;default:0"`
 	ID                       int64                 `gorm:"primaryKey;autoIncrement"`
 	IsHistorical             bool                  `gorm:"not null;default:false"` // Imported history does not count as a new unread message.
@@ -588,6 +606,7 @@ type AIAgent struct {
 	Description            string                          `gorm:"type:varchar(255);not null;default:''"`       // Description 为 AI Agent 描述。
 	Status                 enums.Status                    `gorm:"type:int;not null;index"`                     // Status 为 AI Agent
 	AIConfigID             int64                           `gorm:"type:bigint;not null;default:0;index"`        // AIConfigID 为关联的 AI 配置ID。
+	TranslationAIConfigID  int64                           `gorm:"type:bigint;not null;default:0;index"`        // TranslationAIConfigID 为翻译专用 AI 配置ID，0 表示跟随回复模型。
 	MaxSteps               int                             `gorm:"type:int;not null;default:6"`                 // MaxSteps 为一次 Agent Loop 允许的最大推理步骤数。
 	ContextWindow          int                             `gorm:"type:int;not null;default:0"`                 // ContextWindow 为会话上下文消息窗口，0 表示使用运行时默认值。
 	ToolPolicy             string                          `gorm:"type:text"`                                   // ToolPolicy 为工具风险与确认策略JSON。
@@ -883,7 +902,7 @@ type AIConfig struct {
 	Provider         enums.AIProvider  `gorm:"type:varchar(50);not null;default:'';index"`  // Provider 为供应商标识，例如 openai、azure_openai、dashscope。
 	BaseURL          string            `gorm:"type:varchar(255);not null;default:''"`       // BaseURL 为模型服务基础地址，例如 https://api.openai.com/v1。
 	APIKey           string            `gorm:"type:varchar(255);not null;default:''"`       // APIKey 为服务端请求模型接口所需密钥。
-	ModelType        enums.AIModelType `gorm:"type:varchar(30);not null;default:'';index"`  // ModelType 为模型类型，例如 llm、embedding、rerank。
+	ModelType        enums.AIModelType `gorm:"type:varchar(30);not null;default:'';index"`  // ModelType 为模型类型，例如 llm、translation、embedding、rerank。
 	ModelName        string            `gorm:"type:varchar(100);not null;default:'';index"` // ModelName 为实际请求时传给上游的模型名。
 	Dimension        int               `gorm:"type:int;not null;default:0"`                 // Dimension 为向量维度，仅 embedding 模型通常需要填写。
 	MaxContextTokens int               `gorm:"type:int;not null;default:0"`                 // MaxContextTokens 为模型支持的最大上下文 token 数。

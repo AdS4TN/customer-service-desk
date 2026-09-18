@@ -168,6 +168,24 @@ func ConversationAnyMessage_list(ctx *gin.Context) {
 	httpx.WriteJSON(ctx, httpx.CursorData(results, cast.ToString(nextCursor), hasMore))
 }
 
+func ConversationPostSync_contact(ctx *gin.Context) {
+	if _, err := services.AuthService.RequirePermission(ctx, constants.PermissionConversationView); err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	if _, err := services.AuthService.RequirePermission(ctx, constants.PermissionCustomerUpdate); err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	id, _ := params.GetInt64(ctx, "conversationId")
+	customer, err := services.WhatsAppService.SyncContact(ctx.Request.Context(), id)
+	if err != nil {
+		httpx.WriteJSON(ctx, err)
+		return
+	}
+	httpx.WriteJSON(ctx, builders.BuildCustomer(customer))
+}
+
 func ConversationPostAssign(ctx *gin.Context) {
 	operator, err := services.AuthService.RequirePermission(ctx, constants.PermissionConversationAssign)
 	if err != nil {

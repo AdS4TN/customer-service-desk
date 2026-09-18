@@ -110,6 +110,9 @@ func (s *aIConfigService) UpdateAIConfig(req request.UpdateAIConfigRequest, oper
 	if err != nil {
 		return err
 	}
+	if current.ModelType != item.ModelType {
+		return errorsx.InvalidParamI18n("error.aiConfig.modelTypeImmutable")
+	}
 
 	columns := map[string]any{
 		"name":               item.Name,
@@ -214,7 +217,10 @@ func (s *aIConfigService) buildAIConfigModel(req request.CreateAIConfigRequest) 
 	if baseURL == "" {
 		return nil, errorsx.InvalidParamI18n("error.e0147")
 	}
-	if strs.IsBlank(string(req.ModelType)) {
+	switch req.ModelType {
+	case enums.AIModelTypeLLM, enums.AIModelTypeTranslation, enums.AIModelTypeEmbedding, enums.AIModelTypeRerank:
+		// Supported model type.
+	default:
 		return nil, errorsx.InvalidParamI18n("error.e0243")
 	}
 	if modelName == "" {

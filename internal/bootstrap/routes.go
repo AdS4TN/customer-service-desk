@@ -8,6 +8,47 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func registerDashboardSalesExperienceRoutes(group *gin.RouterGroup) {
+	group.GET("/skills", dashboard.SalesExperienceGetSkills)
+	group.GET("/skill", dashboard.SalesExperienceGetSkill)
+	group.POST("/review", dashboard.SalesExperiencePostReview)
+	group.POST("/review_batch", dashboard.SalesExperiencePostReviewBatch)
+	group.POST("/save_skill", dashboard.SalesExperiencePostSaveSkill)
+	group.GET("/options", dashboard.SalesExperienceGetOptions)
+	group.GET("/sources", dashboard.SalesExperienceGetSources)
+	group.GET("/cases", dashboard.SalesExperienceGetCases)
+	group.GET("/case", dashboard.SalesExperienceGetCase)
+	group.POST("/case/delete", dashboard.SalesExperiencePostDeleteCase)
+	group.POST("/import_preview", dashboard.SalesExperiencePostImportPreview)
+	group.GET("/revisions", dashboard.SalesExperienceGetRevisions)
+	group.GET("/revision", dashboard.SalesExperienceGetRevision)
+	group.GET("/jobs", dashboard.SalesExperienceGetJobs)
+	group.GET("/job", dashboard.SalesExperienceGetJob)
+	group.GET("/export", dashboard.SalesExperienceGetExport)
+	group.POST("/import", dashboard.SalesExperiencePostImport)
+	group.POST("/distill", dashboard.SalesExperiencePostDistill)
+	group.POST("/evaluate", dashboard.SalesExperiencePostEvaluate)
+	group.POST("/edit", dashboard.SalesExperiencePostEdit)
+	group.POST("/annotate", dashboard.SalesExperiencePostAnnotate)
+	group.POST("/rate", dashboard.SalesExperiencePostRate)
+	group.POST("/activate", dashboard.SalesExperiencePostActivate)
+	group.POST("/retry", dashboard.SalesExperiencePostRetry)
+	group.POST("/cancel", dashboard.SalesExperiencePostCancel)
+	group.POST("/skill-miner-debug", dashboard.SalesExperiencePostSkillMinerDebug)
+	group.POST("/skill-miner-review", dashboard.SalesExperiencePostSkillMinerReview)
+	group.POST("/skill-compare", dashboard.SalesExperiencePostSkillCompare)
+}
+
+func registerDashboardAutomationRoutes(group *gin.RouterGroup) {
+	group.GET("/list", dashboard.AutomationGetList)
+	group.GET("/runs", dashboard.AutomationGetRuns)
+	group.POST("/save", dashboard.AutomationPostSave)
+	group.POST("/change", dashboard.AutomationPostChange)
+	group.POST("/delete", dashboard.AutomationPostDelete)
+	group.POST("/test", dashboard.AutomationPostTest)
+	group.POST("/retry", dashboard.AutomationPostRetry)
+}
+
 func registerApiAuthRoutes(group *gin.RouterGroup) {
 	group.POST("/login", api.Login)
 	group.POST("/logout", api.Logout)
@@ -46,6 +87,7 @@ func registerApiConversationRoutes(group *gin.RouterGroup) {
 func registerApiMessageRoutes(group *gin.RouterGroup) {
 	group.Any("/list", api.MessageAnyList)
 	group.POST("/read", api.MessagePostRead)
+	group.POST("/recall", api.MessagePostRecall)
 	group.POST("/send", api.MessagePostSend)
 	group.POST("/upload_attachment", api.MessagePostUpload_attachment)
 	group.POST("/upload_image", api.MessagePostUpload_image)
@@ -162,6 +204,10 @@ func registerDashboardTagRoutes(group *gin.RouterGroup) {
 }
 
 func registerDashboardConversationRoutes(group *gin.RouterGroup) {
+	group.GET("/:id/delegation", dashboard.ConversationGetDelegation)
+	group.POST("/:id/delegation/start", dashboard.ConversationPostStartDelegation)
+	group.POST("/:id/delegation/stop", dashboard.ConversationPostStopDelegation)
+	group.POST("/:id/delegation/preview", dashboard.ConversationPostPreviewDelegation)
 	group.GET("/sales_leads", dashboard.SalesLeadGetList)
 	group.GET("/sales_leads/:leadId", dashboard.SalesLeadGetBy)
 	group.POST("/sales_leads/:leadId/update", dashboard.SalesLeadPostUpdate)
@@ -185,6 +231,7 @@ func registerDashboardConversationRoutes(group *gin.RouterGroup) {
 	group.Any("/conversations", dashboard.ConversationAnyConversations)
 	group.POST("/dispatch", dashboard.ConversationPostDispatch)
 	group.POST("/link_customer", dashboard.ConversationPostLink_customer)
+	group.POST("/sync_contact", dashboard.ConversationPostSync_contact)
 	group.Any("/list", dashboard.ConversationAnyList)
 	group.Any("/message_list", dashboard.ConversationAnyMessage_list)
 	group.POST("/read", dashboard.ConversationPostRead)
@@ -279,6 +326,8 @@ func registerDashboardAgentTeamScheduleRoutes(group *gin.RouterGroup) {
 }
 
 func registerDashboardAIAgentRoutes(group *gin.RouterGroup) {
+	group.GET("/:id/reception_state", dashboard.AIAgentGetReceptionState)
+	group.POST("/preview", dashboard.AIAgentPostPreview)
 	group.POST("/publish", dashboard.AIAgentPostPublish)
 	group.POST("/rollback", dashboard.AIAgentPostRollback)
 	group.POST("/rollback_rollout", dashboard.AIAgentPostRollback_rollout)

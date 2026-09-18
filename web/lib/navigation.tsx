@@ -4,6 +4,7 @@ import {
   CalendarClockIcon,
   FileTextIcon,
   GlobeIcon,
+  GitBranchIcon,
   KeyRoundIcon,
   LayoutDashboardIcon,
   MessageSquareCodeIcon,
@@ -139,6 +140,12 @@ export const dashboardNavSections: DashboardNavSectionConfig[] = [
     icon: <UserCogIcon />,
     items: [
       {
+        titleKey: "nav.automation",
+        url: "/dashboard/automation",
+        icon: <GitBranchIcon />,
+        requiredPermission: "aiAgent.view",
+      },
+      {
         titleKey: "nav.tags",
         url: "/dashboard/tags",
         icon: <TagsIcon />,
@@ -193,22 +200,16 @@ export const dashboardNavSections: DashboardNavSectionConfig[] = [
     icon: <BrainCircuitIcon />,
     items: [
       {
-        titleKey: "nav.knowledge",
-        url: "/dashboard/knowledge",
-        icon: <FileTextIcon />,
-        requiredPermission: "knowledgeBase.view",
-      },
-      {
-        titleKey: "nav.aiConfigs",
-        url: "/dashboard/ai-configs",
-        icon: <BrainCircuitIcon />,
-        requiredPermission: "aiConfig.view",
-      },
-      {
         titleKey: "nav.aiAgents",
         url: "/dashboard/ai-agents",
         icon: <MessageSquareMoreIcon />,
         requiredPermission: "aiAgent.view",
+      },
+      {
+        titleKey: "nav.knowledge",
+        url: "/dashboard/knowledge",
+        icon: <FileTextIcon />,
+        requiredPermission: "knowledgeBase.view",
       },
       {
         titleKey: "nav.skillDefinition",
@@ -217,10 +218,10 @@ export const dashboardNavSections: DashboardNavSectionConfig[] = [
         requiredPermission: "skillDefinition.view",
       },
       {
-        titleKey: "nav.mcp",
-        url: "/dashboard/mcp",
-        icon: <MessageSquareCodeIcon />,
-        requiredPermission: "mcp.view",
+        titleKey: "nav.salesExperience",
+        url: "/dashboard/sales-experience",
+        icon: <BrainCircuitIcon />,
+        requiredPermission: "skillDefinition.view",
       },
       {
         titleKey: "nav.agentRuns",
@@ -234,6 +235,18 @@ export const dashboardNavSections: DashboardNavSectionConfig[] = [
     titleKey: "nav.system",
     icon: <ShieldCheckIcon />,
     items: [
+      {
+        titleKey: "nav.aiConfigs",
+        url: "/dashboard/ai-configs",
+        icon: <BrainCircuitIcon />,
+        requiredPermission: "aiConfig.view",
+      },
+      {
+        titleKey: "nav.mcp",
+        url: "/dashboard/mcp",
+        icon: <MessageSquareCodeIcon />,
+        requiredPermission: "mcp.view",
+      },
       {
         titleKey: "nav.users",
         url: "/dashboard/users",

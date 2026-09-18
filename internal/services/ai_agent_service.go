@@ -105,34 +105,40 @@ func (s *aIAgentService) UpdateAIAgent(req request.UpdateAIAgentRequest, operato
 		return err
 	}
 	columns := map[string]any{
-		"name":                  item.Name,
-		"display_name":          item.DisplayName,
-		"avatar":                item.Avatar,
-		"status_text":           item.StatusText,
-		"description":           item.Description,
-		"ai_config_id":          item.AIConfigID,
-		"max_steps":             item.MaxSteps,
-		"context_window":        item.ContextWindow,
-		"tool_policy":           item.ToolPolicy,
-		"knowledge_policy":      item.KnowledgePolicy,
-		"service_mode":          item.ServiceMode,
-		"system_prompt":         item.SystemPrompt,
-		"welcome_message":       item.WelcomeMessage,
-		"reply_timeout_seconds": item.ReplyTimeoutSeconds,
-		"rollout_percent":       item.RolloutPercent,
-		"team_ids":              item.TeamIDs,
-		"handoff_mode":          item.HandoffMode,
-		"fallback_mode":         item.FallbackMode,
-		"fallback_message":      item.FallbackMessage,
-		"knowledge_ids":         item.KnowledgeIDs,
-		"skill_ids":             item.SkillIDs,
-		"allowed_mcp_tools":     item.AllowedMCPTools,
-		"update_user_id":        operator.UserID,
-		"update_user_name":      operator.Username,
-		"updated_at":            time.Now(),
+		"name":                     item.Name,
+		"display_name":             item.DisplayName,
+		"avatar":                   item.Avatar,
+		"status_text":              item.StatusText,
+		"description":              item.Description,
+		"ai_config_id":             item.AIConfigID,
+		"translation_ai_config_id": item.TranslationAIConfigID,
+		"max_steps":                item.MaxSteps,
+		"context_window":           item.ContextWindow,
+		"tool_policy":              item.ToolPolicy,
+		"knowledge_policy":         item.KnowledgePolicy,
+		"service_mode":             item.ServiceMode,
+		"system_prompt":            item.SystemPrompt,
+		"welcome_message":          item.WelcomeMessage,
+		"reply_timeout_seconds":    item.ReplyTimeoutSeconds,
+		"rollout_percent":          item.RolloutPercent,
+		"team_ids":                 item.TeamIDs,
+		"handoff_mode":             item.HandoffMode,
+		"fallback_mode":            item.FallbackMode,
+		"fallback_message":         item.FallbackMessage,
+		"knowledge_ids":            item.KnowledgeIDs,
+		"skill_ids":                item.SkillIDs,
+		"allowed_mcp_tools":        item.AllowedMCPTools,
+		"update_user_id":           operator.UserID,
+		"update_user_name":         operator.Username,
+		"updated_at":               time.Now(),
 	}
 	if item.RolloutPercent != current.RolloutPercent {
 		columns["previous_rollout_percent"] = current.RolloutPercent
+	}
+	if req.CapabilitiesOnly {
+		delete(columns, "service_mode")
+		delete(columns, "rollout_percent")
+		delete(columns, "previous_rollout_percent")
 	}
 	if req.ReceptionPolicy != nil {
 		columns["reception_policy"] = item.ReceptionPolicy
@@ -202,6 +208,18 @@ func (s *aIAgentService) validatePublishableAgent(db *gorm.DB, agent *models.AIA
 	config := repositories.AIConfigRepository.Get(db, agent.AIConfigID)
 	if config == nil || config.Status != enums.StatusOk {
 		return errorsx.InvalidParam("ai agent model configuration is unavailable")
+	}
+	if config.ModelType != enums.AIModelTypeLLM {
+		return errorsx.InvalidParam("ai agent reply model must be a large language model")
+	}
+	if agent.TranslationAIConfigID > 0 {
+		translationConfig := repositories.AIConfigRepository.Get(db, agent.TranslationAIConfigID)
+		if translationConfig == nil || translationConfig.Status != enums.StatusOk {
+			return errorsx.InvalidParam("ai agent translation model configuration is unavailable")
+		}
+		if translationConfig.ModelType != enums.AIModelTypeTranslation {
+			return errorsx.InvalidParam("ai agent translation model must use the translation model type")
+		}
 	}
 	if _, err := s.normalizeToolPolicy(agent.ToolPolicy); err != nil {
 		return err
@@ -309,6 +327,21 @@ func (s *aIAgentService) buildAIAgentModel(id int64, req request.CreateAIAgentRe
 	if aiConfig.Status != enums.StatusOk {
 		return nil, errorsx.InvalidParamI18n("error.e0011")
 	}
+	if aiConfig.ModelType != enums.AIModelTypeLLM {
+		return nil, errorsx.InvalidParam("ai agent reply model must be a large language model")
+	}
+	if req.TranslationAIConfigID > 0 {
+		translationConfig := AIConfigService.Get(req.TranslationAIConfigID)
+		if translationConfig == nil {
+			return nil, errorsx.InvalidParamI18n("error.e0009")
+		}
+		if translationConfig.Status != enums.StatusOk {
+			return nil, errorsx.InvalidParamI18n("error.e0011")
+		}
+		if translationConfig.ModelType != enums.AIModelTypeTranslation {
+			return nil, errorsx.InvalidParam("ai agent translation model must use the translation model type")
+		}
+	}
 	if req.MaxSteps == 0 {
 		req.MaxSteps = 6
 	}
@@ -382,29 +415,30 @@ func (s *aIAgentService) buildAIAgentModel(id int64, req request.CreateAIAgentRe
 		receptionPolicy = string(buf)
 	}
 	return &models.AIAgent{
-		Name:                name,
-		DisplayName:         strings.TrimSpace(req.DisplayName),
-		Avatar:              strings.TrimSpace(req.Avatar),
-		StatusText:          strings.TrimSpace(req.StatusText),
-		Description:         strings.TrimSpace(req.Description),
-		AIConfigID:          req.AIConfigID,
-		MaxSteps:            req.MaxSteps,
-		ContextWindow:       req.ContextWindow,
-		ToolPolicy:          toolPolicy,
-		KnowledgePolicy:     strings.TrimSpace(req.KnowledgePolicy),
-		ServiceMode:         req.ServiceMode,
-		SystemPrompt:        strings.TrimSpace(req.SystemPrompt),
-		ReceptionPolicy:     receptionPolicy,
-		WelcomeMessage:      strings.TrimSpace(req.WelcomeMessage),
-		ReplyTimeoutSeconds: req.ReplyTimeoutSeconds,
-		RolloutPercent:      req.RolloutPercent,
-		TeamIDs:             utils.JoinInt64s(teamIDs),
-		HandoffMode:         req.HandoffMode,
-		FallbackMode:        req.FallbackMode,
-		FallbackMessage:     strings.TrimSpace(req.FallbackMessage),
-		KnowledgeIDs:        utils.JoinInt64s(knowledgeBaseIDs),
-		SkillIDs:            utils.JoinInt64s(skillIDs),
-		AllowedMCPTools:     mcpToolsJSON,
+		Name:                  name,
+		DisplayName:           strings.TrimSpace(req.DisplayName),
+		Avatar:                strings.TrimSpace(req.Avatar),
+		StatusText:            strings.TrimSpace(req.StatusText),
+		Description:           strings.TrimSpace(req.Description),
+		AIConfigID:            req.AIConfigID,
+		TranslationAIConfigID: req.TranslationAIConfigID,
+		MaxSteps:              req.MaxSteps,
+		ContextWindow:         req.ContextWindow,
+		ToolPolicy:            toolPolicy,
+		KnowledgePolicy:       strings.TrimSpace(req.KnowledgePolicy),
+		ServiceMode:           req.ServiceMode,
+		SystemPrompt:          strings.TrimSpace(req.SystemPrompt),
+		ReceptionPolicy:       receptionPolicy,
+		WelcomeMessage:        strings.TrimSpace(req.WelcomeMessage),
+		ReplyTimeoutSeconds:   req.ReplyTimeoutSeconds,
+		RolloutPercent:        req.RolloutPercent,
+		TeamIDs:               utils.JoinInt64s(teamIDs),
+		HandoffMode:           req.HandoffMode,
+		FallbackMode:          req.FallbackMode,
+		FallbackMessage:       strings.TrimSpace(req.FallbackMessage),
+		KnowledgeIDs:          utils.JoinInt64s(knowledgeBaseIDs),
+		SkillIDs:              utils.JoinInt64s(skillIDs),
+		AllowedMCPTools:       mcpToolsJSON,
 	}, nil
 }
 
@@ -454,7 +488,7 @@ func (s *aIAgentService) normalizeToolPolicy(raw string) (string, error) {
 }
 
 func (s *aIAgentService) normalizeKnowledgeBaseIDs(input []int64) ([]int64, error) {
-	if len(input) == 0 {
+	if input == nil {
 		defaultKnowledgeBase := KnowledgeBaseService.FindOne(sqls.NewCnd().
 			Eq("knowledge_type", string(enums.KnowledgeBaseTypeDocument)).
 			Eq("status", enums.StatusOk).

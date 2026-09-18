@@ -3,17 +3,22 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import {
   HistoryIcon,
-  ClipboardListIcon,
   MessageSquareTextIcon,
   PlugIcon,
   SaveIcon,
-  SettingsIcon,
+  BookOpenIcon,
   Trash2Icon,
   UserRoundCheckIcon,
+  ArrowLeftIcon,
+  ExternalLinkIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { ContentEditor } from "@/components/content-editor"
+import { useConfirm } from "@/components/confirm-provider"
+import { EmployeePreview } from "./employee-preview"
+import { EmployeeResources } from "./employee-resources"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ReceptionState } from "./reception-state"
 import { ReceptionPolicyEditor } from "./reception-policy"
 import { emptyReceptionPolicy, receptionPolicyError, type ReceptionPolicy } from "@/lib/reception"
 import { ImageInput } from "@/components/image-input"
@@ -66,7 +71,7 @@ import {
 } from "@/lib/generated/enums"
 import { cn } from "@/lib/utils"
 
-type SectionKey = "setup" | "persona" | "reception" | "capability" | "service"
+type SectionKey = "persona" | "knowledge" | "capability" | "service"
 type MCPToolItem = CreateAIAgentPayload["mcpTools"][number]
 
 type MCPToolOption = {
@@ -118,23 +123,21 @@ export function AIAgentConfigWorkbench({
   onPolicyStateChange?: (state: { dirty: boolean; saving: boolean }) => void
 }) {
   const t = useI18n()
+  const confirm = useConfirm()
   const [receptionPolicy, setReceptionPolicy] = useState<ReceptionPolicy>(emptyReceptionPolicy)
-  const [policyBaseline, setPolicyBaseline] = useState(JSON.stringify(emptyReceptionPolicy()))
+  const [formBaseline, setFormBaseline] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [loadError, setLoadError] = useState(false)
+  const [publicationRefreshFailed, setPublicationRefreshFailed] = useState(false)
+  const [refreshingPublication, setRefreshingPublication] = useState(false)
   const [policyError, setPolicyError] = useState("")
-  const policyDirty = JSON.stringify(receptionPolicy) !== policyBaseline
-  useEffect(() => {
-    if (!policyDirty) return
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }
-    window.addEventListener("beforeunload", warn)
-    return () => window.removeEventListener("beforeunload", warn)
-  }, [policyDirty])
   const [currentAgentId, setCurrentAgentId] = useState(agentId ?? null)
-  const [activeSection, setActiveSection] = useState<SectionKey>("setup")
+  const [activeSection, setActiveSection] = useState<SectionKey>("persona")
+  const [mobileView, setMobileView] = useState("configure")
   const [agent, setAgent] = useState<AIAgent | null>(null)
   const [agentRevisions, setAgentRevisions] = useState<AgentRevision[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  useEffect(() => { onPolicyStateChange?.({ dirty: policyDirty, saving }) }, [onPolicyStateChange, policyDirty, saving])
   const [versionDialogOpen, setVersionDialogOpen] = useState(false)
 
   const [name, setName] = useState("")
@@ -143,7 +146,8 @@ export function AIAgentConfigWorkbench({
   const [statusText, setStatusText] = useState("")
   const [description, setDescription] = useState("")
   const [aiConfigId, setAIConfigId] = useState("")
-  const [serviceMode, setServiceMode] = useState(String(IMConversationServiceMode.AIFirst))
+  const [translationAIConfigId, setTranslationAIConfigId] = useState("0")
+  const [serviceMode, setServiceMode] = useState(String(IMConversationServiceMode.HumanOnly))
   const [systemPrompt, setSystemPrompt] = useState("")
   const [welcomeMessage, setWelcomeMessage] = useState("")
   const [replyTimeoutSeconds, setReplyTimeoutSeconds] = useState("180")
@@ -157,6 +161,7 @@ export function AIAgentConfigWorkbench({
   const [workflowBindings, setWorkflowBindings] = useState<AIAgentWorkflowBindingInput[]>([])
 
   const [aiConfigs, setAIConfigs] = useState<AIConfig[]>([])
+  const [translationAIConfigs, setTranslationAIConfigs] = useState<AIConfig[]>([])
   const [agentTeams, setAgentTeams] = useState<AdminAgentTeam[]>([])
   const [skills, setSkills] = useState<SkillDefinition[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
@@ -171,10 +176,13 @@ export function AIAgentConfigWorkbench({
 
   const loadData = useCallback(async () => {
     setLoading(true)
+    setLoadError(false)
+    setFormBaseline(null)
     try {
-      const [configsRes, teamsRes, skillListRes, knowledgeBaseListRes, catalogRes, workflowPageRes] =
+      const [configsRes, translationConfigsRes, teamsRes, skillListRes, knowledgeBaseListRes, catalogRes, workflowPageRes] =
         await Promise.allSettled([
           fetchAIConfigsAll({ modelType: AIModelType.LLM }),
+          fetchAIConfigsAll({ modelType: AIModelType.Translation }),
           fetchAgentTeamsAll(),
           fetchSkillDefinitionsAll({ status: Status.Ok }),
           fetchKnowledgeBasesAll({ status: Status.Ok }),
@@ -182,7 +190,12 @@ export function AIAgentConfigWorkbench({
           fetchAIWorkflows({ limit: 100 }),
         ])
 
+      if ([configsRes, translationConfigsRes, teamsRes, skillListRes, knowledgeBaseListRes, catalogRes, workflowPageRes].some((result) => result.status === "rejected")) {
+        throw new Error(t("aiReception.dependenciesFailed"))
+      }
+
       const configs = configsRes.status === "fulfilled" ? configsRes.value : []
+      const translationConfigs = translationConfigsRes.status === "fulfilled" ? translationConfigsRes.value : []
       const teams = teamsRes.status === "fulfilled" ? teamsRes.value : []
       const skillList = skillListRes.status === "fulfilled" ? skillListRes.value : []
       const knowledgeBaseList = knowledgeBaseListRes.status === "fulfilled" ? knowledgeBaseListRes.value : []
@@ -190,6 +203,7 @@ export function AIAgentConfigWorkbench({
       const workflowPage = workflowPageRes.status === "fulfilled" ? workflowPageRes.value : { results: [] }
 
       setAIConfigs(configs ?? [])
+      setTranslationAIConfigs(translationConfigs ?? [])
       setAgentTeams(teams ?? [])
       setSkills(skillList ?? [])
       setKnowledgeBases(knowledgeBaseList ?? [])
@@ -207,10 +221,10 @@ export function AIAgentConfigWorkbench({
         setStatusText("")
         setDescription("")
         setAIConfigId(configs && configs.length > 0 ? String(configs[0].id) : "")
-        setServiceMode(String(IMConversationServiceMode.AIFirst))
+        setTranslationAIConfigId("0")
+        setServiceMode(String(IMConversationServiceMode.HumanOnly))
         setSystemPrompt("")
         setReceptionPolicy(emptyReceptionPolicy())
-        setPolicyBaseline(JSON.stringify(emptyReceptionPolicy()))
         setPolicyError("")
         setWelcomeMessage("")
         setReplyTimeoutSeconds("180")
@@ -237,10 +251,10 @@ export function AIAgentConfigWorkbench({
       setStatusText(detail.statusText || "")
       setDescription(detail.description || "")
       setAIConfigId(toText(detail.aiConfigId))
+      setTranslationAIConfigId(detail.translationAiConfigId ? String(detail.translationAiConfigId) : "0")
       setServiceMode(String(detail.serviceMode || IMConversationServiceMode.AIFirst))
       setSystemPrompt(detail.systemPrompt || "")
       setReceptionPolicy(detail.receptionPolicy ?? emptyReceptionPolicy())
-      setPolicyBaseline(JSON.stringify(detail.receptionPolicy ?? emptyReceptionPolicy()))
       setPolicyError("")
       setWelcomeMessage(detail.welcomeMessage || "")
       setReplyTimeoutSeconds(String(detail.replyTimeoutSeconds ?? 180))
@@ -263,6 +277,7 @@ export function AIAgentConfigWorkbench({
         ),
       )
     } catch (error) {
+      setLoadError(true)
       toast.error(error instanceof Error ? error.message : t("aiAgent.loadDetailFailed"))
     } finally {
       setLoading(false)
@@ -274,26 +289,22 @@ export function AIAgentConfigWorkbench({
   }, [loadData])
 
   async function refreshAgentPublicationState(id: number) {
-    const [detail, revisions] = await Promise.all([
-      fetchAIAgent(id),
-      fetchAIAgentRevisions(id),
-    ])
-    setAgent((current) =>
-      current
-        ? { ...current, publishedRevisionId: detail.publishedRevisionId }
-        : detail,
-    )
-    setAgentRevisions(revisions ?? [])
+    setRefreshingPublication(true)
+    try {
+      const [detail, revisions] = await Promise.all([
+        fetchAIAgent(id),
+        fetchAIAgentRevisions(id),
+      ])
+      setAgent(detail)
+      setAgentRevisions(revisions ?? [])
+      setPublicationRefreshFailed(false)
+    } catch {
+      setPublicationRefreshFailed(true)
+    } finally {
+      setRefreshingPublication(false)
+    }
   }
 
-  const serviceModeOptions = useMemo(
-    () => [
-      { value: String(IMConversationServiceMode.AIOnly), label: t("aiAgent.serviceAiOnly") },
-      { value: String(IMConversationServiceMode.HumanOnly), label: t("aiAgent.serviceHumanOnly") },
-      { value: String(IMConversationServiceMode.AIFirst), label: t("aiAgent.serviceAiFirst") },
-    ],
-    [t],
-  )
   const handoffModeOptions = useMemo(
     () => [
       { value: String(AIAgentHandoffMode.WaitPool), label: t("aiAgent.handoffWaitPool") },
@@ -323,6 +334,16 @@ export function AIAgentConfigWorkbench({
         label: `${item.name} · ${item.modelName}`,
       })),
     [aiConfigs],
+  )
+  const translationAIConfigOptions = useMemo(
+    () => [
+      { value: "0", label: t("aiAgent.translationModelSameAsReply") },
+      ...translationAIConfigs.map((item) => ({
+        value: String(item.id),
+        label: `${item.name} · ${item.modelName}`,
+      })),
+    ],
+    [translationAIConfigs, t],
   )
   const teamOptions = useMemo(
     () => agentTeams.map((item) => ({ value: String(item.id), label: item.name })),
@@ -423,17 +444,17 @@ export function AIAgentConfigWorkbench({
     const error = receptionPolicyError(receptionPolicy)
     setPolicyError(error)
     if (error) {
-      setActiveSection("reception")
+      setActiveSection("persona")
       toast.error(t(`reception.${error}`))
       return false
     }
     if (!name.trim()) {
-      setActiveSection("setup")
+      setActiveSection("persona")
       toast.error(t("aiAgent.nameRequired"))
       return false
     }
     if (!Number(aiConfigId)) {
-      setActiveSection("setup")
+      setActiveSection("persona")
       toast.error(t("aiAgent.aiConfigRequired"))
       return false
     }
@@ -448,7 +469,12 @@ export function AIAgentConfigWorkbench({
       statusText: statusText.trim(),
       description: description.trim(),
       aiConfigId: Number(aiConfigId),
+      translationAiConfigId: Number(translationAIConfigId),
       serviceMode: Number(serviceMode),
+      maxSteps: agent?.maxSteps,
+      contextWindow: agent?.contextWindow,
+      toolPolicy: agent?.toolPolicy,
+      knowledgePolicy: agent?.knowledgePolicy,
       systemPrompt: systemPrompt.trim(),
       receptionPolicy,
       welcomeMessage: welcomeMessage.trim(),
@@ -465,27 +491,52 @@ export function AIAgentConfigWorkbench({
     }
   }
 
+  const formValue = JSON.stringify(buildPayload())
+  const formDirty = formBaseline !== null && formValue !== formBaseline
+  useEffect(() => {
+    if (!loading && !loadError && formBaseline === null) setFormBaseline(formValue)
+  }, [loading, loadError, formBaseline, formValue])
+  useEffect(() => { onPolicyStateChange?.({ dirty: formDirty, saving }) }, [onPolicyStateChange, formDirty, saving])
+  useEffect(() => {
+    if (!formDirty) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }
+    window.addEventListener("beforeunload", warn)
+    return () => window.removeEventListener("beforeunload", warn)
+  }, [formDirty])
+
+  async function persistAgentDraft(payload: CreateAIAgentPayload) {
+    if (!agent) return
+    await updateAIAgent({ id: agent.id, ...payload, capabilitiesOnly: true })
+    // A metadata read can fail after a successful write. Commit local saved
+    // state and invalidate runtime independently of revision-history refresh.
+    setAgent((current) => current ? { ...current, name: payload.name, serviceMode: payload.serviceMode } : current)
+    setFormBaseline(formValue)
+    setRefreshKey((value) => value + 1)
+    onAgentSaved?.()
+  }
+
   async function saveAgentSettings() {
     if (!validateForm()) return
     setSaving(true)
     try {
       const payload = buildPayload()
       if (agent) {
-        await updateAIAgent({ id: agent.id, ...payload })
+        await persistAgentDraft(payload)
         toast.success(
           agent.publishedRevisionId > 0
             ? t("aiAgent.savedActiveNote")
             : t("aiAgent.savedNote"),
         )
+        await refreshAgentPublicationState(agent.id)
       } else {
         const created = await createAIAgent(payload)
         setCurrentAgentId(created.id)
         setAgent(created)
         toast.success(t("aiAgent.createdNote"))
         onAgentCreated?.(created)
+        onAgentSaved?.()
       }
-      onAgentSaved?.()
-      setPolicyBaseline(JSON.stringify(receptionPolicy))
+      setFormBaseline(formValue)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("aiAgent.saveFailed"))
     } finally {
@@ -499,10 +550,11 @@ export function AIAgentConfigWorkbench({
     setSaving(true)
     try {
       const payload = buildPayload()
-      await updateAIAgent({ id: agent.id, ...payload })
+      await persistAgentDraft(payload)
       await publishAIAgent(agent.id)
+      setRefreshKey((value) => value + 1)
       await refreshAgentPublicationState(agent.id)
-      setPolicyBaseline(JSON.stringify(receptionPolicy))
+      setFormBaseline(formValue)
       toast.success(t("aiAgent.publishedSuccess"))
       onAgentSaved?.()
     } catch (error) {
@@ -514,9 +566,11 @@ export function AIAgentConfigWorkbench({
 
   async function rollbackAgentRevision(revisionId: number) {
     if (!agent || revisionId <= 0 || revisionId === agent.publishedRevisionId) return
+    if (!await confirm({ title: t("aiReception.rollbackTitle"), description: t("aiReception.rollbackBody"), confirmText: t("aiAgent.rollback") })) return
     setSaving(true)
     try {
       await rollbackAIAgent(agent.id, revisionId)
+      setRefreshKey((value) => value + 1)
       toast.success(t("aiAgent.rollbackSuccess"))
       await refreshAgentPublicationState(agent.id)
       onAgentSaved?.()
@@ -534,11 +588,10 @@ export function AIAgentConfigWorkbench({
     title: string
     icon: ReactNode
   }[] = [
-    { key: "setup", title: t("aiAgent.sectionSetup"), icon: <SettingsIcon /> },
-    { key: "persona", title: t("aiAgent.sectionPersona"), icon: <MessageSquareTextIcon /> },
-    { key: "reception", title: t("reception.title"), icon: <ClipboardListIcon /> },
-    { key: "capability", title: t("aiAgent.sectionCapability"), icon: <PlugIcon /> },
-    { key: "service", title: t("aiAgent.sectionService"), icon: <UserRoundCheckIcon /> },
+    { key: "persona", title: t("employee.persona"), icon: <MessageSquareTextIcon /> },
+    { key: "knowledge", title: t("employee.knowledge"), icon: <BookOpenIcon /> },
+    { key: "capability", title: t("employee.actions"), icon: <PlugIcon /> },
+    { key: "service", title: t("employee.assignment"), icon: <UserRoundCheckIcon /> },
   ]
 
   if (loading) {
@@ -549,16 +602,18 @@ export function AIAgentConfigWorkbench({
     )
   }
 
+  if (loadError) return <div className="flex h-full flex-col items-center justify-center gap-4 p-6" role="alert">
+    <p className="text-sm">{t("aiAgent.loadDetailFailed")}</p>
+    <Button type="button" variant="outline" onClick={() => void loadData()}>{t("aiAgent.refresh")}</Button>
+  </div>
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <header className="flex min-h-16 shrink-0 items-center justify-between gap-4 border-b px-5 py-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          {/* <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/5 text-primary">
-            <BotMessageSquareIcon className="size-5" />
-          </div> */}
+      <header className="flex min-h-16 shrink-0 items-center justify-between gap-4 border-b px-4 py-3">
+        <Button type="button" variant="ghost" size="icon" title={t("employee.back")} aria-label={t("employee.back")} onClick={onCancel} disabled={saving}><ArrowLeftIcon /></Button>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
-            <h1 className="truncate text-base font-semibold">{agent?.name || t("aiAgent.new")}</h1>
-            {agent?.statusName ? <Badge variant="secondary">{agent.statusName}</Badge> : null}
+            <h1 className="truncate text-base font-semibold">{name || t("employee.new")}</h1>
             <Badge variant={agentPublished ? "default" : "outline"}>
               {agentPublished ? t("aiAgent.published") : agent ? t("aiAgent.unpublished") : t("aiAgent.notCreated")}
             </Badge>
@@ -566,197 +621,55 @@ export function AIAgentConfigWorkbench({
           {agent ? (
             <Button type="button" variant="link" onClick={() => setVersionDialogOpen(true)}>
               <HistoryIcon />
-              {t("aiAgent.versionHistory")}
+              {t("employee.history")}
             </Button>
           ) : null}
         </div>
       </header>
-      <nav className="shrink-0 border-b px-5 py-3 md:hidden" aria-label={t("aiAgent.columnAiConfig")}>
-        <OptionCombobox
-          value={activeSection}
-          options={sections.map((section) => ({ value: section.key, label: section.title }))}
-          placeholder={t("aiAgent.columnAiConfig")}
-          onChange={(value) => {
-            const section = sections.find((item) => item.key === value)
-            if (section) setActiveSection(section.key)
-          }}
-        />
-      </nav>
+      {publicationRefreshFailed && agent ? <div role="alert" className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-5 py-2">
+        <p className="min-w-0 flex-1 text-sm">{t("aiReception.metadataRefreshFailed")}</p>
+        <Button type="button" variant="outline" size="sm" disabled={refreshingPublication || saving} onClick={() => void refreshAgentPublicationState(agent.id)}>{t("aiReception.retryMetadata")}</Button>
+      </div> : null}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-2">
+        <div className="hidden min-w-0 overflow-x-auto md:block">
+          <Tabs value={activeSection} onValueChange={(value) => setActiveSection(value as SectionKey)}>
+            <TabsList variant="line">{sections.map((section) => <TabsTrigger key={section.key} value={section.key}>{section.icon}{section.title}</TabsTrigger>)}</TabsList>
+          </Tabs>
+        </div>
+        <div className="min-w-0 flex-1 md:hidden"><OptionCombobox value={activeSection} placeholder={t("employee.configure")} options={sections.map((section) => ({ value: section.key, label: section.title }))} onChange={(value) => { setActiveSection(value as SectionKey); setMobileView("configure") }} /></div>
+        <div className="xl:hidden"><Tabs value={mobileView} onValueChange={(value) => setMobileView(String(value))}><TabsList><TabsTrigger value="configure">{t("employee.configure")}</TabsTrigger><TabsTrigger value="trial">{t("employee.trial")}</TabsTrigger></TabsList></Tabs></div>
+      </div>
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-64 shrink-0 flex-col border-r bg-muted/20 p-4 md:flex">
-          <div className="px-3 pb-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-            {t("aiAgent.columnAiConfig")}
-          </div>
-          <nav className="space-y-1">
-            {sections.map((section, index) => (
-              <button
-                key={section.key}
-                type="button"
-                onClick={() => setActiveSection(section.key)}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
-                  activeSection === section.key
-                    ? "bg-primary/5 font-medium text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <span
-                  className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted [&>svg]:size-4",
-                    activeSection === section.key && "bg-background text-primary shadow-sm",
-                  )}
-                >
-                  {section.icon}
-                </span>
-                <span className="flex-1">{section.title}</span>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-              </button>
-            ))}
-          </nav>
-          <div className="mt-auto flex items-center justify-between rounded-lg border bg-background p-3 text-xs">
-            <span className="text-muted-foreground">{t("common.status")}</span>
-            <span className={agentPublished ? "font-medium text-emerald-600" : "font-medium text-amber-600"}>
-              {agentPublished ? t("aiAgent.published") : agent ? t("aiAgent.unpublished") : t("aiAgent.notCreated")}
-            </span>
-          </div>
-        </aside>
-
-        <main className="min-w-0 flex-1 overflow-y-auto bg-background">
-          <div className="mx-auto w-full max-w-4xl p-5 sm:p-8">
-            {activeSection === "setup" ? (
-              <div className="space-y-10">
-                <FormSection
-                  title={t("aiAgent.sectionBasic")}
-                  description={t("aiAgent.basicDescription")}
-                >
-                  <div className="grid gap-5 md:grid-cols-2">
-                    <FieldBlock label={t("aiAgent.name")} required>
-                      <Input value={name} onChange={(event) => setName(event.target.value)} />
-                    </FieldBlock>
-                    <FieldBlock label={t("aiAgent.columnServiceMode")}>
-                      <OptionCombobox
-                        value={serviceMode}
-                        options={serviceModeOptions}
-                        placeholder={t("aiAgent.selectServiceMode")}
-                        onChange={setServiceMode}
-                      />
-                    </FieldBlock>
-                    <FieldBlock label={t("aiAgent.description")} className="md:col-span-2">
-                      <Textarea
-                        rows={4}
-                        value={description}
-                        onChange={(event) => setDescription(event.target.value)}
-                      />
-                    </FieldBlock>
-                  </div>
-                </FormSection>
-
-                <FormSection
-                  title={t("aiAgent.publicIdentity")}
-                  description={t("aiAgent.publicIdentityDescription")}
-                >
-                  <div className="grid gap-6 md:grid-cols-[7rem_minmax(0,1fr)]">
-                    <FieldBlock label={t("aiAgent.avatar")}>
-                      <ImageInput
-                        value={avatar}
-                        onChange={setAvatar}
-                        prefix="agent-avatars"
-                        accept="image/png,image/jpeg,image/webp"
-                        className="size-24 rounded-full"
-                        placeholder={t("aiAgent.uploadAvatar")}
-                      />
-                    </FieldBlock>
-                    <div className="grid gap-5 md:grid-cols-2">
-                      <FieldBlock label={t("aiAgent.displayName")}>
-                        <Input
-                          value={displayName}
-                          maxLength={100}
-                          placeholder={name || t("aiAgent.displayNamePlaceholder")}
-                          onChange={(event) => setDisplayName(event.target.value)}
-                        />
-                      </FieldBlock>
-                      <FieldBlock label={t("aiAgent.statusText")}>
-                        <Input
-                          value={statusText}
-                          maxLength={100}
-                          placeholder={t("aiAgent.statusTextPlaceholder")}
-                          onChange={(event) => setStatusText(event.target.value)}
-                        />
-                      </FieldBlock>
-                      <p className="text-xs leading-5 text-muted-foreground md:col-span-2">
-                        {t("aiAgent.publicIdentityPublishHint")}
-                      </p>
-                    </div>
-                  </div>
-                </FormSection>
-
-                <FormSection
-                  title={t("aiAgent.sectionModel")}
-                  description={t("aiAgent.modelDescription")}
-                >
-                  <div className="grid gap-5 md:grid-cols-2">
-                    <FieldBlock label={t("aiAgent.aiConfig")} required>
-                      <OptionCombobox
-                        value={aiConfigId}
-                        options={aiConfigOptions}
-                        placeholder={t("aiAgent.selectAiConfig")}
-                        searchPlaceholder={t("aiAgent.searchAiConfig")}
-                        emptyText={t("aiAgent.emptyAiConfig")}
-                        onChange={setAIConfigId}
-                      />
-                    </FieldBlock>
-                    <FieldBlock label={t("aiAgent.replyTimeout")}>
-                      <div className="relative">
-                        <Input
-                          type="number"
-                          min={0}
-                          step={1}
-                          className="pr-12"
-                          value={replyTimeoutSeconds}
-                          onChange={(event) => setReplyTimeoutSeconds(event.target.value)}
-                        />
-                        <span className="pointer-events-none absolute top-2.5 right-3 text-sm text-muted-foreground">
-                          {t("aiAgent.seconds")}
-                        </span>
-                      </div>
-                    </FieldBlock>
-                  </div>
-                </FormSection>
+        <div className={cn("min-w-0 flex-1 overflow-y-auto bg-background xl:block", mobileView === "trial" && "hidden")}>
+          <fieldset disabled={saving} className="mx-auto flex min-w-0 w-full max-w-4xl flex-col gap-8 p-4 lg:p-6">
+            {activeSection === "persona" ? <div className="flex flex-col gap-6">
+              <div className="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-4">
+                <ImageInput value={avatar} onChange={setAvatar} prefix="agent-avatars" accept="image/png,image/jpeg,image/webp" className="size-20 rounded-md" placeholder={t("aiAgent.uploadAvatar")} />
+                <FieldBlock label={t("aiAgent.name")} required><Input aria-label={t("aiAgent.name")} value={name} onChange={(event) => setName(event.target.value)} /></FieldBlock>
               </div>
-            ) : null}
+              <FieldBlock label={t("employee.persona")}>
+                <Textarea className="min-h-64" aria-label={t("employee.persona")} rows={12} value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} />
+              </FieldBlock>
+              <details><summary className="cursor-pointer text-sm font-medium">{t("reception.title")}</summary><div className="pt-4"><ReceptionPolicyEditor value={receptionPolicy} disabled={saving} error={policyError} onChange={(value) => { setReceptionPolicy(value); setPolicyError("") }} /></div></details>
+              <details><summary className="cursor-pointer text-sm font-medium">{t("aiAgent.publicIdentity")}</summary>
+                <div className="flex flex-col gap-4 pt-4">
+                  <FieldBlock label={t("aiAgent.displayName")}><Input aria-label={t("aiAgent.displayName")} value={displayName} placeholder={name} onChange={(event) => setDisplayName(event.target.value)} /></FieldBlock>
+                  <FieldBlock label={t("aiAgent.statusText")}><Input aria-label={t("aiAgent.statusText")} value={statusText} onChange={(event) => setStatusText(event.target.value)} /></FieldBlock>
+                  <FieldBlock label={t("aiAgent.description")}><Textarea aria-label={t("aiAgent.description")} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} /></FieldBlock>
+                  <FieldBlock label={t("aiAgent.sectionGreeting")}><Textarea aria-label={t("aiAgent.sectionGreeting")} rows={3} value={welcomeMessage} onChange={(event) => setWelcomeMessage(event.target.value)} /></FieldBlock>
+                </div>
+              </details>
+              <details open={!aiConfigId}><summary className="cursor-pointer text-sm font-medium">{t("employee.advanced")}</summary>
+                <div className="flex flex-col gap-4 pt-4">
+                  <FieldBlock label={t("aiAgent.replyModel")} required><OptionCombobox value={aiConfigId} options={aiConfigOptions} placeholder={t("aiAgent.selectAiConfig")} searchPlaceholder={t("aiAgent.searchAiConfig")} emptyText={t("aiAgent.emptyAiConfig")} onChange={setAIConfigId} /></FieldBlock>
+                  <FieldBlock label={t("aiAgent.translationModel")} description={t("aiAgent.translationModelDescription")}><OptionCombobox value={translationAIConfigId} options={translationAIConfigOptions} placeholder={t("aiAgent.translationModelSameAsReply")} searchPlaceholder={t("aiAgent.searchAiConfig")} emptyText={t("aiAgent.emptyAiConfig")} onChange={setTranslationAIConfigId} /></FieldBlock>
+                  <FieldBlock label={t("aiAgent.replyTimeout")}><Input aria-label={t("aiAgent.replyTimeout")} type="number" min={0} step={1} value={replyTimeoutSeconds} onChange={(event) => setReplyTimeoutSeconds(event.target.value)} /></FieldBlock>
+                </div>
+              </details>
+            </div> : null}
 
-            {activeSection === "reception" && <ReceptionPolicyEditor value={receptionPolicy} disabled={saving} error={policyError} onChange={(value) => { setReceptionPolicy(value); setPolicyError("") }} />}
-
-            {activeSection === "persona" ? (
-              <div className="space-y-10">
-                <FormSection
-                  title={t("aiAgent.sectionRole")}
-                  description={t("aiAgent.personaDescription")}
-                >
-                  <ContentEditor
-                    value={{ mode: "markdown", raw: systemPrompt }}
-                    allowedModes={["markdown"]}
-                    height={360}
-                    onChange={(next) => setSystemPrompt(next.raw)}
-                  />
-                </FormSection>
-                <FormSection
-                  title={t("aiAgent.sectionGreeting")}
-                  description={t("aiAgent.greetingDescription")}
-                >
-                  <Textarea
-                    rows={5}
-                    value={welcomeMessage}
-                    onChange={(event) => setWelcomeMessage(event.target.value)}
-                  />
-                </FormSection>
-              </div>
-            ) : null}
-
-            {activeSection === "capability" ? (
-              <div className="space-y-10">
+            {activeSection === "knowledge" ? (
+              <div className="flex flex-col gap-8">
                 <FormSection
                   title={t("aiAgent.sectionKnowledge")}
                   description={t("aiAgent.knowledgeDescription")}
@@ -787,6 +700,14 @@ export function AIAgentConfigWorkbench({
                   />
                 </FormSection>
 
+                <EmployeeResources knowledgeIds={selectedKnowledgeBaseIds} skillIds={selectedSkillIds} knowledgeBases={knowledgeBases} skills={skills}
+                  onResourcesChange={(bases, definitions) => { setKnowledgeBases(bases); setSkills(definitions) }}
+                  onSkillAdded={(skill) => { setSkills((items) => [...items.filter((item) => item.id !== skill.id), skill]); setSelectedSkillIds((ids) => uniqueNumbers([...ids, skill.id])) }} />
+              </div>
+            ) : null}
+
+            {activeSection === "capability" ? (
+              <div className="flex flex-col gap-10">
                 <FormSection
                   title={t("aiAgent.sectionWorkflow")}
                   description={t("aiAgent.workflowDescription")}
@@ -902,7 +823,11 @@ export function AIAgentConfigWorkbench({
             ) : null}
 
             {activeSection === "service" ? (
-              <div className="space-y-10">
+              <div className="flex flex-col gap-8">
+                {agent ? <ReceptionState agentId={agent.id} refreshKey={refreshKey} /> : <p className="text-sm text-muted-foreground">{t("aiReception.createFirst")}</p>}
+                <p className="text-sm text-muted-foreground">{t("employee.rulesHint")}</p>
+                <Button variant="outline" render={<a href="/dashboard/automation" target="_blank" rel="noreferrer" />}><ExternalLinkIcon data-icon="inline-start" />{t("employee.openRules")}</Button>
+                <details><summary className="cursor-pointer text-sm font-medium">{t("employee.fallback")}</summary><div className="flex flex-col gap-6 pt-4">
                 <FormSection
                   title={t("aiAgent.sectionHandoff")}
                   description={t("aiAgent.handoffDescription")}
@@ -974,29 +899,25 @@ export function AIAgentConfigWorkbench({
                     />
                   </FieldBlock>
                 </FormSection>
+                </div></details>
               </div>
             ) : null}
-          </div>
-        </main>
+          </fieldset>
+        </div>
+        <aside className={cn("min-h-0 min-w-0 flex-1 border-l xl:block xl:w-[380px] xl:max-w-[40%] xl:flex-none 2xl:w-[440px]", mobileView !== "trial" && "hidden")}>
+          <EmployeePreview draft={buildPayload()} resourceKey={JSON.stringify(skills.filter((skill) => selectedSkillIds.includes(skill.id)))} />
+        </aside>
       </div>
 
       <footer className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-t bg-background px-5 py-3">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span
-            className={cn(
-              "size-2 rounded-full",
-              agentPublished ? "bg-emerald-500" : "bg-amber-500",
-            )}
-          />
+        <div className="min-w-0 flex-1 basis-full text-xs text-muted-foreground sm:basis-0">
           <span>
-            {agentPublished
-              ? t("aiAgent.publishedNote")
-              : t("aiAgent.unpublishedNote")}
+            {formDirty ? t("aiReception.unsaved") : agentPublished ? t("employee.published") : t("aiAgent.unpublishedNote")}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
           <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>
-            {t("common.cancel")}
+            {t("employee.back")}
           </Button>
           <Button
             type="button"
@@ -1005,10 +926,10 @@ export function AIAgentConfigWorkbench({
             onClick={saveAgentSettings}
           >
             <SaveIcon />
-            {t("aiAgent.saveConfig")}
+            {saving ? t("aiReception.saving") : t("aiAgent.saveConfig")}
           </Button>
           {agent ? (
-            <Button type="button" disabled={saving} onClick={publishAgent}>
+            <Button type="button" className="col-span-2" disabled={saving} onClick={publishAgent}>
               {t("aiAgent.publishAgent")}
             </Button>
           ) : null}
@@ -1044,13 +965,13 @@ function FormSection({
   children: ReactNode
 }) {
   return (
-    <section className="space-y-4">
+    <section className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="relative pl-3 text-[15px] font-semibold text-foreground before:absolute before:top-1 before:left-0 before:h-4 before:w-0.5 before:rounded-full before:bg-primary">
+          <h2 className="text-sm font-semibold text-foreground">
             {title}
           </h2>
-          <p className="mt-1 pl-3 text-xs leading-5 text-muted-foreground">{description}</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
         </div>
         {action}
       </div>
@@ -1062,11 +983,13 @@ function FormSection({
 function FieldBlock({
   label,
   required,
+  description,
   className,
   children,
 }: {
   label: string
   required?: boolean
+  description?: string
   className?: string
   children: ReactNode
 }) {
@@ -1077,6 +1000,7 @@ function FieldBlock({
         {required ? <span className="ml-1 text-destructive">*</span> : null}
       </Label>
       {children}
+      {description ? <p className="text-xs leading-5 text-muted-foreground">{description}</p> : null}
     </div>
   )
 }

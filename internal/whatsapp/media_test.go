@@ -24,7 +24,7 @@ func TestMediaContentTypes(t *testing.T) {
 		{"reaction", &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Text: proto.String("")}}, false},
 		{"location", &waE2E.Message{LocationMessage: &waE2E.LocationMessage{DegreesLatitude: proto.Float64(22.5)}}, false},
 		{"contact", &waE2E.Message{ContactMessage: &waE2E.ContactMessage{DisplayName: proto.String("Customer")}}, false},
-		{"unsupported", &waE2E.Message{PollCreationMessage: &waE2E.PollCreationMessage{Name: proto.String("poll")}}, false},
+		{"poll", &waE2E.Message{PollCreationMessage: &waE2E.PollCreationMessage{Name: proto.String("poll")}}, false},
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
 			text, metadata, media := parseContent(&events.Message{Message: tc.msg})

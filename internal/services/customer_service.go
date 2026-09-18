@@ -34,7 +34,11 @@ type customerService struct {
 }
 
 func (s *customerService) Get(id int64) *models.Customer {
-	return repositories.CustomerRepository.Get(sqls.DB(), id)
+	item := repositories.CustomerRepository.Get(sqls.DB(), id)
+	if item != nil {
+		resolveCustomerAvatars([]*models.Customer{item})
+	}
+	return item
 }
 
 func (s *customerService) Take(where ...interface{}) *models.Customer {
@@ -371,10 +375,33 @@ func (s *customerService) SaveCustomerProfile(req request.SaveCustomerProfileReq
 			}
 			out = repositories.CustomerRepository.Get(ctx.Tx, customerID)
 		}
+		if req.ManualTags != nil {
+			tags := normalizeCustomerTags(*req.ManualTags)
+			encoded, _ := json.Marshal(tags)
+			if err := repositories.CustomerRepository.UpdateColumn(ctx.Tx, customerID, "manual_tags", string(encoded)); err != nil {
+				return err
+			}
+			out.ManualTags = string(encoded)
+		}
 		return CustomerContactService.ReplaceAllForCustomerInTx(ctx, customerID, req.Contacts, operator)
 	})
 	if err != nil {
 		return nil, err
 	}
+	resolveCustomerAvatars([]*models.Customer{out})
 	return out, nil
+}
+
+func normalizeCustomerTags(values []string) []string {
+	tags := []string{}
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		key := strings.ToLower(value)
+		if value != "" && !seen[key] {
+			tags = append(tags, value)
+			seen[key] = true
+		}
+	}
+	return tags
 }

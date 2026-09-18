@@ -49,6 +49,14 @@ func TestReplyEligibilityCanReply(t *testing.T) {
 	}
 }
 
+func TestReplyEligibilityDoesNotReopenExplicitDelegation(t *testing.T) {
+	conversation := newConversationFixture()
+	conversation.DelegationManaged = true
+	if newReplyEligibility().CanReply(conversation, newCustomerMessageFixture("hello"), newAIAgentFixture()) {
+		t.Fatal("legacy runtime must not reopen an explicitly managed conversation")
+	}
+}
+
 func TestAIAgentRolloutUsesStableConversationBucket(t *testing.T) {
 	conversation := models.Conversation{ID: 101, ChannelID: 7}
 	agent := models.AIAgent{ID: 9, RolloutPercent: 50}
