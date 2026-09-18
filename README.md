@@ -2,277 +2,174 @@
 
 English | [简体中文](README_ZH.md)
 
-An open-source AI Agent customer support system with knowledge-based answers, human handoff, ticket workflows, and self-hosted deployment.
+AgentDesk is an open-source, self-hosted customer reception and sales-assistance workspace. It brings website chat, WhatsApp, Messenger, human agents, AI employees, customer profiles, sales leads, follow-up work, automation, and reusable sales Skills into one operating loop.
 
-> Built for teams that need online support, knowledge-base Q&A, human collaboration, and service tracking in one system. It is not just an LLM inside a chat box; it is an AI Helpdesk foundation designed around real support operations.
+This repository started from [huabeitech/agent-desk](https://github.com/huabeitech/agent-desk) and is being developed into a multichannel AI sales and service platform. See [Upstream and License](#upstream-and-license) for attribution.
 
-## Product Preview
+## Product Direction
 
-Customer chat, agent workspace, knowledge base, model configuration, and AI Agent orchestration are managed in one system.
+```mermaid
+flowchart LR
+    A[Website / WhatsApp / Messenger] --> B[Unified Inbox]
+    B --> C[Customer Profile and Lead]
+    C --> D[Human Agent with AI Copilot]
+    D --> E[Follow-up / Ticket / Automation]
+    E --> F[Outcome and Conversation History]
+    F --> G[Extract Reusable Sales Skills]
+    G --> D
+```
 
-### Customer Chat
-
-![Customer Chat](screenshots/1.png)
-
-Customers can start a conversation from the web chat page. The AI Agent responds first with knowledge-grounded answers. When the user explicitly asks for a human, the system can start a handoff confirmation flow.
-
-### Agent Workspace
-
-![Agent Workspace](screenshots/2.png)
-
-The support workspace includes conversation lists, message handling, AI-to-human handoff, agent replies, conversation tags, linked customers, and ticket context for daily support work.
-
-### Knowledge Base and AI Agent Configuration
-
-| Knowledge Base FAQ | AI Agent Configuration |
-| --- | --- |
-| ![Knowledge Base FAQ](screenshots/4.png) | ![AI Agent Configuration](screenshots/5.png) |
-
-The knowledge base stores FAQs, documents, and retrievable content. AI Agents can be bound to model configurations, knowledge bases, Skills, and tools to create support agents for specific scenarios.
-
-### Model Configuration
-
-![Model Configuration](screenshots/3.png)
-
-Model configuration supports OpenAI-compatible providers. You can configure LLMs, embedding models, rerank models, context limits, output settings, timeout, retry behavior, and enablement state.
-
-## Why Use It
-
-- **AI-first support**: Let AI Agents handle common questions, standard procedures, and knowledge-base answers first.
-- **Knowledge-constrained replies**: Use RAG and the Answerability Gate to decide whether retrieved knowledge is strong enough to answer, reducing unsupported responses.
-- **Natural human handoff**: Move to human agents when knowledge is insufficient, the user asks for help, or a workflow requires human confirmation.
-- **Conversation-to-ticket loop**: Online chat, support handling, ticket creation, status flow, and progress records stay in one system.
-- **Built for extension**: The backend uses Go, the frontend uses Next.js, and the runtime supports Skills, MCP, and OpenAI-compatible model access.
-- **Self-host friendly**: Supports SQLite / MySQL and Qdrant for local trials, intranet deployment, and enterprise self-hosting.
+The AI layer is not limited to automatic replies. It can work privately beside a salesperson, retrieve approved knowledge, recommend a reply, explain which Skills and sources were used, and learn reusable sales techniques from selected conversation histories after human review.
 
 ## Core Capabilities
 
-- **AI Agent support**: AI replies first, with fallback, confirmation, tool calling, and human collaboration.
-- **Online conversation system**: Visitor sessions, message send/receive, unread status, assignment, transfer, and close flows.
-- **Agent workspace**: Agents can take over conversations, reply to users, transfer teammates, link customers, and create tickets.
-- **Knowledge-base RAG**: Knowledge bases, documents, FAQs, chunking, vector retrieval, retrieval logs, and quality analysis.
-- **Answerability Gate**: Checks whether retrieved content can support an answer; otherwise returns a fallback and recommends human support.
-- **Ticket system**: Create tickets from conversations, categorize, assign, move through status flows, record progress, and close the loop.
-- **Support organization management**: Agent profiles, teams, schedules, and automatic assignment.
-- **AI extensibility**: Skills, MCP debugging, and external tool integration.
-- **Multiple entry points**: Admin dashboard, agent workspace, customer-facing web pages, and embeddable SDK.
+### Unified Multichannel Reception
 
-## Use Cases
+- One inbox for website chat, WhatsApp, Messenger, and future channel adapters.
+- Customer identity, conversation history, unread state, assignment, transfer, claim, and close flows.
+- Structured rendering for text, images, audio, video, documents, stickers, reactions, replies, edits, recalls, contacts, locations, and other linked-channel events.
+- WhatsApp linked-device connection, QR login, contact/profile synchronization, media handling, and best-effort history synchronization.
 
-- Website live support
-- SaaS product support
-- AI + human hybrid support
-- Internal enterprise service desk
-- After-sales service, incident reporting, complaints, and operations support
-- Support teams that need knowledge-base Q&A with human collaboration
+> The current WhatsApp connector uses the open-source `whatsmeow` linked-device protocol. It is not Meta Cloud API. Production use requires an independent review of platform terms, account risk, customer authorization, and data compliance.
+
+### AI-Assisted Reception
+
+- AI reply suggestions remain private until an operator chooses to send them.
+- Suggestions can show mounted Skills, invoked tools, knowledge retrieval state, and cited sources.
+- Multilingual detection, translation, and response-language control.
+- AI employee profiles with model, persona, knowledge bases, Skills, tools, handoff policy, and reception settings.
+- Draft preview and shadow/trial workflows for comparing behavior without sending customer messages.
+
+### Sales Lead and Follow-up Loop
+
+- Convert inquiries and conversations into customer and sales-lead records.
+- Enrich leads and apply AI-generated tags while retaining manual remarks and tags.
+- Assign an owner, record outcomes, schedule the next action, and mark won or lost results.
+- Use in-app reminders, tickets, and automation rules to keep leads from being left unattended.
+
+### Sales Experience and Skills
+
+- Select complete conversations or individual messages and import them as reviewable cases.
+- Identify only genuinely reusable sales techniques; a conversation may correctly produce no Skill.
+- Present evidence and reasoning in a readable review flow instead of exposing raw model JSON.
+- Edit, reject, retry, or approve each candidate independently before adding it to the Skill library.
+- Bind approved Skills to an AI employee and compare answers with and without an individual Skill.
+
+### Knowledge, Automation, and Operations
+
+- Knowledge-base RAG with documents, FAQs, chunks, retrieval logs, and answerability checks.
+- Rules with triggers, conditions, actions, enablement state, and execution history.
+- Initial actions cover lead handling, tagging, owner assignment, and ticket workflows.
+- Human takeover, AI delegation trials, conversation memory, service tickets, and operational audit context.
+
+## Main Workspaces
+
+| Workspace | Route | Purpose |
+| --- | --- | --- |
+| Unified inbox | `/dashboard/conversations` | Receive, assign, reply, inspect customers, and use AI assistance |
+| Channel access | `/dashboard/channels` | Configure website, WhatsApp, and Messenger connections |
+| AI employees | `/dashboard/ai-agents` | Configure identity, models, knowledge, Skills, tools, and reception |
+| Sales leads | `/dashboard/sales-leads` | Qualify, assign, follow up, and close inquiries |
+| Sales experience | `/dashboard/sales-experience` | Import cases, extract techniques, review Skills, and compare behavior |
+| Automation | `/dashboard/automation` | Define rules and inspect execution history |
+| Tickets | `/dashboard/tickets` | Track service and follow-up work to completion |
+| Knowledge bases | `/dashboard/knowledge` | Maintain grounded product and service knowledge |
 
 ## Quick Start
 
-The fastest way to try the full stack is Docker Compose:
+### Docker Compose
 
 ```bash
 docker compose up -d --build
 ```
 
-For the full English setup guide, see [Docker Compose Quick Start](https://agent-desk.huabei.pro/docs/getting-started/docker-compose.html).
+This starts AgentDesk on port `8083`, MySQL 8.4, and Qdrant on ports `6333` and `6334`. Open `http://localhost:8083/dashboard` after the services become healthy.
 
-To embed customer support on your website, see [Web Widget Integration](https://agent-desk.huabei.pro/docs/integration/web-widget.html).
-
-To connect OpenAI-compatible model providers, see [Model Provider Configuration](https://agent-desk.huabei.pro/docs/config/model-provider.html).
-
-Compose starts:
-
-- `agent-desk`: application service on port `8083`
-- `mysql`: MySQL 8.4 with the `mysql-data` volume
-- `qdrant`: vector database with the `qdrant-data` volume, ports `6333` / `6334`
-
-After startup, open:
-
-- Admin dashboard: `http://localhost:8083/dashboard`
-- Agent workspace: `http://localhost:8083/dashboard/conversations`
-- Customer web integration demo: `http://localhost:8083/support/demo`
-- Customer chat page: `http://localhost:8083/support/chat`
-
-Default administrator account:
+The development image contains a bootstrap administrator account:
 
 - Username: `admin`
 - Password: `ChangeMe123!`
 
-> Before exposing the system to the public internet or a team environment, change the default administrator password and configure independent authentication, session, and model secrets.
+Change the password and all application, session, database, and model credentials before exposing the service to a network or connecting a production channel.
 
-## Local Development
+### Local Development
 
-### Requirements
-
-- Go `1.26+`
-- Node.js `20+`
-- `pnpm`
-- Qdrant
-
-### Prepare Configuration
+Requirements: Go `1.26+`, Node.js `20+`, `pnpm`, [Task](https://taskfile.dev/), and Qdrant.
 
 ```bash
 cp config/config.example.yaml config/config.yaml
-```
-
-The default configuration uses:
-
-- SQLite: `data/app.db`
-- Backend: `http://127.0.0.1:8083`
-- Qdrant gRPC: `127.0.0.1:6334`
-
-If Qdrant is not running locally, start it with Docker:
-
-```bash
-docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
-```
-
-Install frontend dependencies:
-
-```bash
-cd web
-pnpm install
-cd ..
-```
-
-Start backend and frontend development servers together:
-
-```bash
+cd web && pnpm install && cd ..
+docker run --rm -p 6333:6333 -p 6334:6334 qdrant/qdrant
 task dev
 ```
 
 Default development URLs:
 
-- Admin dashboard: `http://localhost:3000/dashboard`
-- Agent workspace: `http://localhost:3000/dashboard/conversations`
-- Customer web integration demo: `http://localhost:3000/support/demo`
-- Customer chat page: `http://localhost:3000/support/chat`
+- Frontend: `http://localhost:3000/dashboard`
+- Backend: `http://127.0.0.1:8083`
+- Unified inbox: `http://localhost:3000/dashboard/conversations`
+- Website chat demo: `http://localhost:3000/support/demo`
 
-## Tech Stack
+`task dev` downloads the native LanceDB artifact for the current platform when required. Run `task --list` to see all available commands.
 
-- Backend: Golang + Gin + GORM + `github.com/mlogclub/simple`
-- Frontend: Next.js 16 + React 19 + shadcn/ui + Tailwind CSS
-- Database: SQLite / MySQL
-- Vector DB: Qdrant
-- AI: OpenAI-compatible LLM / Embedding + RAG + Skills + MCP
+## Configuration Notes
 
-## Project Structure
+- Runtime configuration is read from `config/config.yaml`; the file is intentionally ignored by Git.
+- Model credentials belong in the dashboard or private runtime configuration and must never be committed.
+- SQLite is suitable for local trials. The Compose setup uses MySQL and Qdrant.
+- Connecting a channel and enabling automatic AI reception are separate decisions. Review reception mode and sending policy before using a real account.
+- Imported histories and production customer data stay in local runtime data paths and are excluded from this repository.
+
+## Architecture
+
+- Backend: Go, Gin, GORM
+- Frontend: Next.js 16, React 19, shadcn/ui, Tailwind CSS
+- Data: SQLite or MySQL
+- Retrieval: Qdrant with optional LanceDB support
+- AI: OpenAI-compatible providers, RAG, Skills, MCP, and workflow runtime
+- Realtime and channels: WebSocket, website SDK, WhatsApp linked device, Messenger adapter
 
 ```text
 .
-├── cmd/                    # server / migration / generator / testdata
+├── cmd/                    # Server, migrations, generators, test data
 ├── internal/
-│   ├── bootstrap/          # startup, routes, database, and migration initialization
-│   ├── builders/           # model / aggregate result to response DTO mapping
-│   ├── handlers/           # dashboard / api / third HTTP handlers
-│   ├── middleware/         # Gin middleware
-│   ├── migration/          # idempotent data migrations
-│   ├── models/             # GORM models
-│   ├── repositories/       # data access layer
-│   ├── services/           # business orchestration and transaction boundaries
-│   ├── ai/                 # LLM / RAG / Runtime / Skills / MCP
-│   └── pkg/                # config / dto / enums / httpx / utils and shared packages
-├── web/                    # Next.js frontend project
-│   ├── app/dashboard/      # admin dashboard and agent workspace
-│   ├── app/support/        # customer integration and chat pages
-│   ├── components/         # React components
-│   ├── lib/                # API client, SDK source, and utilities
-│   └── public/sdk/         # built embeddable SDK
-├── config/                 # configuration files
-├── docker/                 # Docker configuration
-└── docs/                   # documentation site
+│   ├── ai/                 # LLM, RAG, runtime, Skills, tools, workflows
+│   ├── handlers/           # Dashboard, public API, and channel handlers
+│   ├── models/             # Persistent domain models
+│   ├── repositories/       # Data access
+│   ├── services/           # Reception, sales, automation, and tickets
+│   └── whatsapp/           # WhatsApp linked-device adapter
+├── web/                    # Next.js dashboard, chat surfaces, and SDK
+├── config/                 # Configuration templates
+├── docker/                 # Container runtime configuration
+└── docs/                   # Supporting documentation
 ```
 
-## Common Commands
+## Repository Documentation
+
+- [AI customer service and employee configuration](AI-CUSTOMER-SERVICE.md)
+- [Sales experience extraction and Skill review](SALES-EXPERIENCE.md)
+- [Automation rules](AUTOMATION.md)
+- [AI delegation and trial reception](DELEGATION.md)
+- [WhatsApp connector implementation and reuse](WHATSAPP-REUSE.md)
+
+Some modules are still being iterated and should be validated in a test environment before production rollout.
+
+## Verification
 
 ```bash
-task dev        # start backend and frontend development servers
-task build      # build the frontend SPA and current-platform Go binary into dist/
-task build:lancedb  # build the current-platform LanceDB binary into dist/
-task release    # build linux/darwin/windows release binaries into dist/
-task release:lancedb  # build LanceDB release binaries into dist/
-task generator  # run code generation
-task enums      # generate frontend enums
-task --list     # show available tasks
+go test ./internal/...
+cd web
+pnpm typecheck
+pnpm lint
 ```
 
-## AI Agent Workflow
+Some scripts in `web/*.browser.mjs` require Playwright and a built `web/out` directory. Never run customer-send verification against a connected production account.
 
-```mermaid
-flowchart TD
-    A[User starts a support request<br/>Web support entry / Open API] --> B[Create or match a conversation]
-    B --> C[Customer sends a message]
-    C --> D[Trigger AI Reply Runtime]
-    D --> E[Load conversation history / AI configuration]
-    E --> F[Retrieve from bound knowledge bases]
-    F --> G{Are retrieved chunks enough to answer?}
-    G -- No --> Z[Return knowledge fallback<br/>and recommend human support]
-    G -- Yes --> H[Prepare Skills / MCP Tools]
-    H --> I[Pass trusted knowledge context to the Agent]
-    I --> J{Direct reply?}
-    J -- Yes --> K[LLM generates a knowledge-grounded reply]
-    J -- No --> N{Call Graph / MCP Tool?}
-    N -- Yes --> O[Run Skill / Graph / MCP Tool]
-    O --> P{Need user confirmation?}
-    P -- No --> I
-    P -- Yes --> Q[Ask the user to confirm]
-    Q --> R{Confirmation result}
-    R -- Confirm handoff --> S[Move conversation to human handoff pool]
-    S --> T[Automatic or manual assignment]
-    T --> U[Agent workspace takeover]
-    U --> V{Need ticket tracking?}
-    V -- Yes --> W[Create or link a ticket]
-    V -- No --> X[Human agent continues handling]
-    W --> X
-    X --> Y[Resolve and close]
-    R -- Confirm ticket --> AA[Create a ticket from the current conversation]
-    AA --> I
-    R -- Cancel --> K
-    N -- No --> K
-```
+## Upstream and License
 
-## Support Loop
+This repository is derived from [huabeitech/agent-desk](https://github.com/huabeitech/agent-desk). The multichannel sales workflows, sales-experience extraction, AI assistance, automation, and related product changes are maintained at:
 
-```mermaid
-flowchart LR
-    A[Customer request] --> B[AI Agent handles first]
-    B --> C{Can the knowledge base answer?}
-    C -- Yes --> D[AI replies with trusted knowledge]
-    C -- No --> E[Fallback / recommend human support]
-    D --> F{Need a human?}
-    E --> G[Human takeover]
-    F -- No --> H[Conversation ends or data is retained]
-    F -- Yes --> G
-    G --> I[Agent workspace handles the case]
-    I --> J{Need follow-up tracking?}
-    J -- Yes --> K[Create / link a ticket]
-    J -- No --> L[Resolve directly]
-    K --> M[Ticket status flow and progress records]
-    M --> N[Complete]
-    L --> N
-```
+- [shenzhen-unique-armor/customer-service-desk](https://gitee.com/shenzhen-unique-armor/customer-service-desk)
 
-## Docker Image
-
-If you only need to build the application image, prepare MySQL and Qdrant yourself and mount a configuration file:
-
-```bash
-docker build -t mlogclub/agent-desk .
-docker run --rm -p 8083:8083 \
-  -v $(pwd)/docker/agent-desk.yaml:/app/config/config.yaml:ro \
-  -v agent-desk-data:/app/data \
-  mlogclub/agent-desk
-```
-
-Compose uses [docker/agent-desk.yaml](docker/agent-desk.yaml) as the in-container configuration. The application reaches `mysql` and `qdrant` through Docker service names.
-
-## Open-source Positioning
-
-`AgentDesk` is useful as an open-source foundation for:
-
-- AI customer support systems
-- AI Helpdesk / AI Support Platform projects
-- RAG answerability + human handoff implementation references
-- Enterprise AI Agent application frameworks
-
-If you are looking for a customer support system centered on AI Agents rather than a simple LLM chat box, this project is designed for that purpose.
+The project is distributed under the [Apache License 2.0](LICENSE). Third-party components and channel libraries retain their own licenses and platform terms.

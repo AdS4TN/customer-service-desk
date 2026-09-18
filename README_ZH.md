@@ -2,277 +2,174 @@
 
 [English](README.md) | 简体中文
 
-开源的 AI Agent 客服系统，支持知识库问答、人工接管、工单闭环和私有化部署。
+AgentDesk 是一套开源、可私有化部署的多渠道客户接待与销售辅助工作台。它将官网咨询、WhatsApp、Messenger、人工客服、AI 员工、客户资料、销售线索、跟进任务、自动化和可复用的销售 Skill 放进同一个业务闭环。
 
-> 面向需要同时处理在线咨询、知识库问答、人工协同和服务跟踪的团队。它不是把 LLM 接进聊天框，而是一套围绕客服场景设计的 AI Helpdesk 基础系统。
+本仓库基于上游 [huabeitech/agent-desk](https://github.com/huabeitech/agent-desk) 继续开发，目标是形成面向外贸询盘和销售接待的多渠道 AI 工作平台。来源与许可证说明见[上游来源与许可证](#上游来源与许可证)。
 
-## 产品预览
+## 产品定位
 
-客户侧在线咨询、客服工作台、知识库、模型配置和 AI Agent 编排都在同一套系统中完成。
+```mermaid
+flowchart LR
+    A[官网 / WhatsApp / Messenger] --> B[统一会话入口]
+    B --> C[客户档案与销售线索]
+    C --> D[人工销售 + AI 辅助]
+    D --> E[跟进 / 工单 / 自动化]
+    E --> F[成交结果与完整对话]
+    F --> G[提炼可复用销售 Skill]
+    G --> D
+```
 
-### 客户侧在线咨询
-
-![客户侧在线咨询](screenshots/1.png)
-
-客户可以在 Web 聊天页中直接发起咨询。AI Agent 会先接待，基于知识库回答问题；当用户明确要求人工介入时，会触发转人工确认流程。
-
-### 客服工作台
-
-![客服工作台](screenshots/2.png)
-
-客服工作台支持会话列表、消息处理、AI 转人工、客服回复、会话标签、关联客户和工单信息查看，适合客服日常接待使用。
-
-### 知识库与 AI 配置
-
-| 知识库 FAQ | AI Agent 配置 |
-| --- | --- |
-| ![知识库 FAQ](screenshots/4.png) | ![AI Agent 配置](screenshots/5.png) |
-
-知识库用于沉淀 FAQ、文档和可检索内容；AI Agent 可以绑定模型配置、知识库、Skills 和工具能力，形成面向具体客服场景的智能客服实例。
-
-### 模型配置
-
-![模型配置](screenshots/3.png)
-
-模型配置支持 OpenAI-compatible 接入方式，可分别配置大语言模型、向量模型和重排模型，并管理上下文、输出、超时、重试和启用状态。
-
-## 为什么选择它
-
-- **AI 先接待**：让 AI Agent 优先处理常见问题、标准流程和知识库问答。
-- **知识约束回答**：通过 RAG 和 Answerability Gate 判断知识片段是否足以回答，减少超出知识库范围的乱答。
-- **自然转人工**：当知识库不足、用户明确要求或流程需要人工确认时，进入人工接管。
-- **会话到工单闭环**：在线会话、客服接待、工单创建、状态流转和处理记录在同一套系统里完成。
-- **适合二次开发**：后端使用 Go，前端使用 Next.js，支持 Skills、MCP 和 OpenAI-compatible 模型接入。
-- **可私有化部署**：支持 SQLite / MySQL 和 Qdrant，适合本地体验、内网部署和企业自托管。
+这里的 AI 不只是自动回复。它可以作为销售人员的私有副驾驶，检索经过确认的知识，生成建议回复，说明使用了哪些 Skill、工具和知识来源，并在人工审核后从选定的历史会话中沉淀可复用的销售技巧。
 
 ## 核心能力
 
-- **AI Agent 客服**：AI 优先回复，支持兜底、确认、工具调用和人工协同。
-- **在线会话系统**：支持访客会话、消息收发、未读状态、会话分配、转接和关闭。
-- **客服工作台**：客服可接管会话、回复用户、转接同事、关联客户和创建工单。
-- **知识库 RAG**：支持知识库、文档、FAQ、切片、向量检索、检索日志和质量分析。
-- **Answerability Gate**：判断检索内容是否足以支撑回答，不足时返回兜底提示并建议联系人工。
-- **工单系统**：支持从会话创建工单、分类、指派、状态流转、进展记录和闭环处理。
-- **客服组织管理**：支持客服档案、客服组、排班和自动分配能力。
-- **AI 扩展能力**：支持 Skills、MCP 调试和外部工具接入。
-- **多入口接入**：提供管理后台、客服工作台、客户侧 Web 页面和嵌入式 SDK。
+### 多渠道统一接待
 
-## 适用场景
+- 在一个工作台中处理官网咨询、WhatsApp、Messenger，并为后续渠道适配预留统一入口。
+- 统一管理客户身份、完整会话、未读状态、认领、分配、转接与关闭流程。
+- 展示文本、图片、语音、视频、文件、贴纸、反应、引用回复、编辑、撤回、联系人、位置等结构化消息。
+- 支持 WhatsApp 关联设备扫码、联系人与头像同步、附件处理及尽力而为的历史消息同步。
 
-- 官网在线客服
-- SaaS 产品支持
-- AI + 人工混合接待
-- 企业内部服务台
-- 售后、报障、投诉和运营支持
-- 需要知识库问答与人工协同的客服团队
+> 当前 WhatsApp 接入使用开源 `whatsmeow` 关联设备协议，不是 Meta Cloud API。生产使用前需要独立评估平台条款、账号风险、客户授权和数据合规要求。
+
+### AI 辅助接待
+
+- AI 建议回复默认仅在客服侧可见，由操作人员确认后手动发送。
+- 建议结果可展示挂载的 Skill、调用的工具、知识库检索状态和引用来源。
+- 支持语言识别、翻译和回复语言控制。
+- AI 员工可配置模型、人设、知识库、Skill、工具、转人工策略和接待设置。
+- 提供草稿预览、影子模式和试运行流程，在不向客户发消息的情况下比较效果。
+
+### 询盘与销售跟进闭环
+
+- 将会话自动沉淀为客户和销售线索。
+- 自动补充线索信息并生成 AI 标签，同时保留人工备注和手动标签。
+- 分配负责人、记录跟进结果、安排下次跟进，并标记成交或流失。
+- 通过站内提醒、工单和自动化规则减少线索遗漏。
+
+### 销售经验与 Skill
+
+- 选择完整会话或指定消息，导入为可审阅的聊天案例。
+- 只识别真正可复用的销售技巧；没有学习价值的会话可以不产生 Skill。
+- 用可读的证据和判断理由呈现提炼结果，不直接暴露模型 JSON。
+- 每个候选 Skill 可以独立编辑、取消、重新提炼或确认入库。
+- 将确认后的 Skill 挂载到 AI 员工，并单独对比挂载与未挂载时的回复效果。
+
+### 知识库、自动化与协作
+
+- 知识库支持文档、FAQ、切片、向量检索、检索日志和可回答性判断。
+- 自动化规则包含触发器、条件、动作、启停状态和执行记录。
+- 第一阶段动作覆盖线索处理、打标签、分配负责人和售后工单。
+- 支持人工接管、AI 委派试运行、会话记忆、服务工单和操作审计上下文。
+
+## 主要工作区
+
+| 工作区 | 路径 | 用途 |
+| --- | --- | --- |
+| 统一会话 | `/dashboard/conversations` | 接待、认领、分配、回复、查看客户和使用 AI 辅助 |
+| 渠道接入 | `/dashboard/channels` | 配置官网、WhatsApp 和 Messenger |
+| AI 员工 | `/dashboard/ai-agents` | 配置身份、模型、知识、Skill、工具和接待策略 |
+| 销售线索 | `/dashboard/sales-leads` | 识别、分配、跟进并关闭询盘 |
+| 销售经验 | `/dashboard/sales-experience` | 导入案例、提炼技巧、审核 Skill 和对比效果 |
+| 自动化 | `/dashboard/automation` | 创建规则并检查执行记录 |
+| 工单 | `/dashboard/tickets` | 跟踪售后和需要持续处理的任务 |
+| 知识库 | `/dashboard/knowledge` | 维护产品与服务知识，约束 AI 回答 |
 
 ## 快速开始
 
-推荐先用 Docker Compose 体验完整服务：
+### Docker Compose
 
 ```bash
 docker compose up -d --build
 ```
 
-完整英文配置与排查说明见 [Docker Compose Quick Start](https://agent-desk.huabei.pro/zh/docs/getting-started/docker-compose.html)。
+Compose 会启动 AgentDesk（端口 `8083`）、MySQL 8.4 和 Qdrant（端口 `6333`、`6334`）。服务健康后访问 `http://localhost:8083/dashboard`。
 
-如需在官网或产品中嵌入客服入口，见 [Web Widget Integration](https://agent-desk.huabei.pro/zh/docs/integration/web-widget.html)。
-
-如需接入 OpenAI-compatible 模型供应商，见 [Model Provider Configuration](https://agent-desk.huabei.pro/zh/docs/config/model-provider.html)。
-
-Compose 默认会启动：
-
-- `agent-desk`：应用服务，端口 `8083`
-- `mysql`：MySQL 8.4，数据卷 `mysql-data`
-- `qdrant`：向量数据库，数据卷 `qdrant-data`，端口 `6333` / `6334`
-
-启动后访问：
-
-- 管理后台：`http://localhost:8083/dashboard`
-- 客服工作台：`http://localhost:8083/dashboard/conversations`
-- 客户侧 Web 接入示例：`http://localhost:8083/support/demo`
-- 客户侧聊天页：`http://localhost:8083/support/chat`
-
-默认管理员账号：
+开发镜像包含一个初始化管理员账号：
 
 - 用户名：`admin`
 - 密码：`ChangeMe123!`
 
-> 首次用于公网或团队环境前，请务必修改默认管理员密码，并配置独立的鉴权、会话和模型密钥。
+在将服务暴露到网络或接入真实生产渠道前，必须修改默认密码，并分别配置应用、会话、数据库和模型密钥。
 
-## 本地开发
+### 本地开发
 
-### 环境要求
-
-- Go `1.26+`
-- Node.js `20+`
-- `pnpm`
-- Qdrant
-
-### 准备配置
+环境要求：Go `1.26+`、Node.js `20+`、`pnpm`、[Task](https://taskfile.dev/) 和 Qdrant。
 
 ```bash
 cp config/config.example.yaml config/config.yaml
-```
-
-默认配置使用：
-
-- SQLite：`data/app.db`
-- Backend：`http://127.0.0.1:8083`
-- Qdrant gRPC：`127.0.0.1:6334`
-
-如果本地还没有 Qdrant，可以用 Docker 启动：
-
-```bash
-docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
-```
-
-安装前端依赖：
-
-```bash
-cd web
-pnpm install
-cd ..
-```
-
-同时启动后端和前端开发服务：
-
-```bash
+cd web && pnpm install && cd ..
+docker run --rm -p 6333:6333 -p 6334:6334 qdrant/qdrant
 task dev
 ```
 
-开发环境默认入口：
+默认开发地址：
 
-- 管理后台：`http://localhost:3000/dashboard`
-- 客服工作台：`http://localhost:3000/dashboard/conversations`
-- 客户侧 Web 接入示例：`http://localhost:3000/support/demo`
-- 客户侧聊天页：`http://localhost:3000/support/chat`
+- 前端：`http://localhost:3000/dashboard`
+- 后端：`http://127.0.0.1:8083`
+- 统一会话：`http://localhost:3000/dashboard/conversations`
+- 官网聊天示例：`http://localhost:3000/support/demo`
 
-## 技术栈
+`task dev` 会在需要时下载当前平台的 LanceDB 原生依赖。使用 `task --list` 查看完整命令。
 
-- Backend：Golang + Gin + GORM + `github.com/mlogclub/simple`
-- Frontend：Next.js 16 + React 19 + shadcn/ui + Tailwind CSS
-- Database：SQLite / MySQL
-- Vector DB：Qdrant
-- AI：OpenAI-compatible LLM / Embedding + RAG + Skills + MCP
+## 配置说明
 
-## 项目结构
+- 运行配置位于 `config/config.yaml`，该文件默认不会提交到 Git。
+- 模型凭据通过后台或私有运行配置维护，禁止提交到仓库。
+- SQLite 适合本地验证；Docker Compose 默认使用 MySQL 和 Qdrant。
+- 渠道成功连接与 AI 自动接待是两项独立配置。真实账号上线前必须检查 AI 员工的接待模式和渠道发送策略。
+- 导入的聊天记录和生产客户数据保存在本地运行数据目录中，不属于代码仓库内容。
+
+## 技术架构
+
+- 后端：Go、Gin、GORM
+- 前端：Next.js 16、React 19、shadcn/ui、Tailwind CSS
+- 数据库：SQLite 或 MySQL
+- 检索：Qdrant，可选 LanceDB 支持
+- AI：OpenAI-compatible 模型、RAG、Skills、MCP 和工作流运行时
+- 实时与渠道：WebSocket、官网 SDK、WhatsApp 关联设备、Messenger 适配器
 
 ```text
 .
-├── cmd/                    # server / migration / generator / testdata
+├── cmd/                    # 服务入口、迁移、代码生成和测试数据
 ├── internal/
-│   ├── bootstrap/          # 启动、路由、数据库和迁移初始化
-│   ├── builders/           # model / 聚合结果到 response DTO 的映射
-│   ├── handlers/           # dashboard / api / third HTTP handlers
-│   ├── middleware/         # Gin middleware
-│   ├── migration/          # 幂等数据迁移
-│   ├── models/             # GORM models
+│   ├── ai/                 # LLM、RAG、运行时、Skills、工具和工作流
+│   ├── handlers/           # 管理后台、开放 API 与渠道处理器
+│   ├── models/             # 持久化领域模型
 │   ├── repositories/       # 数据访问层
-│   ├── services/           # 业务编排和事务边界
-│   ├── ai/                 # LLM / RAG / Runtime / Skills / MCP
-│   └── pkg/                # config / dto / enums / httpx / utils 等基础包
-├── web/                    # Next.js 前端工程
-│   ├── app/dashboard/      # 管理后台与客服工作台
-│   ├── app/support/        # 客户侧接入和聊天页面
-│   ├── components/         # React 组件
-│   ├── lib/                # API client、SDK 源码和工具函数
-│   └── public/sdk/         # 构建后的嵌入式 SDK
-├── config/                 # 配置文件
-├── docker/                 # Docker 配置
-└── docs/                   # 项目文档
+│   ├── services/           # 接待、销售、自动化与工单业务编排
+│   └── whatsapp/           # WhatsApp 关联设备协议适配
+├── web/                    # Next.js 管理后台、聊天界面和 SDK
+├── config/                 # 配置模板
+├── docker/                 # 容器运行配置
+└── docs/                   # 补充文档
 ```
 
-## 常用命令
+## 仓库文档
+
+- [AI 客服与 AI 员工配置](AI-CUSTOMER-SERVICE.md)
+- [销售经验提炼与 Skill 审核](SALES-EXPERIENCE.md)
+- [自动化规则](AUTOMATION.md)
+- [AI 委派与试运行接待](DELEGATION.md)
+- [WhatsApp 接入实现与复用说明](WHATSAPP-REUSE.md)
+
+这些文档记录当前实现边界。部分模块仍处于持续迭代阶段，上生产前应先在测试环境完成验证。
+
+## 验证
 
 ```bash
-task dev            # 同时启动后端和前端开发服务
-task build          # 构建前端 SPA 和当前平台 Go 二进制
-task build:lancedb  # 构建当前平台 LanceDB 二进制
-task release        # 构建常用平台二进制
-task release:lancedb  # 构建 LanceDB 发布二进制
-task generator      # 执行代码生成
-task enums          # 生成前端枚举
-task --list         # 查看可用任务
+go test ./internal/...
+cd web
+pnpm typecheck
+pnpm lint
 ```
 
-## AI Agent 工作流
+`web/*.browser.mjs` 中的部分浏览器脚本需要 Playwright 和已构建的 `web/out`。禁止使用已连接的生产账号执行任何客户发信测试。
 
-```mermaid
-flowchart TD
-    A[用户发起咨询<br/>Web 客服入口 / Open API] --> B[创建或匹配会话]
-    B --> C[客户发送消息]
-    C --> D[触发 AI Reply Runtime]
-    D --> E[加载会话历史 / AI 配置]
-    E --> F[按绑定知识库执行检索]
-    F --> G{知识片段是否足以回答?}
-    G -- 否 --> Z[返回知识库兜底提示<br/>并建议联系人工客服]
-    G -- 是 --> H[准备 Skills / MCP Tools]
-    H --> I[将可信知识上下文交给 Agent]
-    I --> J{直接回复?}
-    J -- 是 --> K[LLM 基于知识生成回复并返回用户]
-    J -- 否 --> N{是否调用 Graph / MCP Tool?}
-    N -- 是 --> O[执行 Skill / Graph / MCP Tool]
-    O --> P{需要用户确认?}
-    P -- 否 --> I
-    P -- 是 --> Q[向用户发起确认]
-    Q --> R{用户确认结果}
-    R -- 确认转人工 --> S[会话转人工并进入待接入池]
-    S --> T[自动分配或人工分配]
-    T --> U[客服工作台接管]
-    U --> V{是否需要工单跟踪?}
-    V -- 是 --> W[创建或关联工单]
-    V -- 否 --> X[人工继续处理]
-    W --> X
-    X --> Y[问题解决并关闭]
-    R -- 确认建单 --> AA[从当前会话创建工单]
-    AA --> I
-    R -- 取消 --> K
-    N -- 否 --> K
-```
+## 上游来源与许可证
 
-## 业务闭环
+本仓库基于 [huabeitech/agent-desk](https://github.com/huabeitech/agent-desk) 开发。当前的多渠道销售链路、销售经验提炼、AI 辅助、自动化及相关产品改动维护在：
 
-```mermaid
-flowchart LR
-    A[客户咨询] --> B[AI Agent 接待]
-    B --> C{知识库可回答?}
-    C -- 是 --> D[AI 基于可信知识回复]
-    C -- 否 --> E[兜底提示 / 建议人工]
-    D --> F{是否需要人工?}
-    E --> G[人工接管]
-    F -- 否 --> H[会话结束或沉淀数据]
-    F -- 是 --> G
-    G --> I[客服工作台处理]
-    I --> J{是否需要跟踪?}
-    J -- 是 --> K[创建 / 关联工单]
-    J -- 否 --> L[直接解决]
-    K --> M[工单流转与进展记录]
-    M --> N[处理完成]
-    L --> N
-```
+- [shenzhen-unique-armor/customer-service-desk](https://gitee.com/shenzhen-unique-armor/customer-service-desk)
 
-## Docker 镜像
-
-如果只需要构建应用镜像，可以自行准备 MySQL 和 Qdrant，并挂载配置文件：
-
-```bash
-docker build -t mlogclub/agent-desk .
-docker run --rm -p 8083:8083 \
-  -v $(pwd)/docker/agent-desk.yaml:/app/config/config.yaml:ro \
-  -v agent-desk-data:/app/data \
-  mlogclub/agent-desk
-```
-
-Compose 使用 [docker/agent-desk.yaml](docker/agent-desk.yaml) 作为容器内配置，应用会通过 Docker 内部服务名访问 `mysql` 和 `qdrant`。
-
-## 开源定位
-
-`AgentDesk` 适合作为以下方向的开源基础项目：
-
-- AI 客服系统
-- AI Helpdesk / AI Support Platform
-- RAG 可回答性判定 + Human Handoff 的落地样板
-- 面向企业场景的 AI Agent 应用框架
-
-如果你在寻找一个以 AI Agent 为中心，而不是仅仅把 LLM 嵌进聊天框的客服系统，这个项目就是为此设计的。
+项目采用 [Apache License 2.0](LICENSE)。第三方组件和渠道协议库分别遵循各自的许可证及平台条款。
