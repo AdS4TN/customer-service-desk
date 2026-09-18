@@ -21,46 +21,53 @@ flowchart LR
 
 The AI layer is not limited to automatic replies. It can work privately beside a salesperson, retrieve approved knowledge, recommend a reply, explain which Skills and sources were used, and learn reusable sales techniques from selected conversation histories after human review.
 
-## Core Capabilities
+## Capabilities Added in This Fork
 
-### Unified Multichannel Reception
+The upstream project provides the base helpdesk, knowledge-base, ticket, and Agent runtime. The following product capabilities are the focus of this fork and are implemented or substantially extended in this repository.
 
-- One inbox for website chat, WhatsApp, Messenger, and future channel adapters.
-- Customer identity, conversation history, unread state, assignment, transfer, claim, and close flows.
-- Structured rendering for text, images, audio, video, documents, stickers, reactions, replies, edits, recalls, contacts, locations, and other linked-channel events.
-- WhatsApp linked-device connection, QR login, contact/profile synchronization, media handling, and best-effort history synchronization.
+### 1. Unified Website, WhatsApp, and Messenger Reception
 
-> The current WhatsApp connector uses the open-source `whatsmeow` linked-device protocol. It is not Meta Cloud API. Production use requires an independent review of platform terms, account risk, customer authorization, and data compliance.
+- Added independent channel-management entries for website chat, WhatsApp, and Messenger while normalizing inbound data into the same customer, conversation, and message model.
+- Extended the inbox from web support into a multichannel workbench with channel filters, unread state, claim, owner assignment, transfer, close, and customer-context synchronization.
+- Added a shared linked-message contract and renderer for text, images, audio, video, documents, stickers, reactions, quoted replies, edits, recalls, contacts, locations, calls, polls, and protocol-specific fallback types.
+- Added WhatsApp linked-device QR login, session restoration, profile/avatar synchronization, attachment download and upload, message decryption, history synchronization, missing-history recovery, idempotent persistence, and outbound-media support.
+- Added Messenger protocol integration through a separate connector while keeping channel transport concerns outside the sales and AI domain services.
 
-### AI-Assisted Reception
+> WhatsApp currently uses the open-source `whatsmeow` linked-device protocol, not Meta Cloud API. Messenger relies on a protocol adapter rather than the official business inbox API. Production use requires an independent review of platform terms, account risk, customer authorization, and data compliance.
 
-- AI reply suggestions remain private until an operator chooses to send them.
-- Suggestions can show mounted Skills, invoked tools, knowledge retrieval state, and cited sources.
-- Multilingual detection, translation, and response-language control.
-- AI employee profiles with model, persona, knowledge bases, Skills, tools, handoff policy, and reception settings.
-- Draft preview and shadow/trial workflows for comparing behavior without sending customer messages.
+### 2. AI Sales Copilot and Shadow Mode
 
-### Sales Lead and Follow-up Loop
+- Added private suggested replies beside the live conversation. Closing and reopening the panel does not inherently regenerate a reply; a changed conversation context or an explicit retry controls regeneration.
+- Added traceable suggestion metadata: mounted Skills, tool execution state, knowledge retrieval status, cited chunks, selected AI employee/model, latency, and failure reason.
+- Added language detection, source/target translation, response-language enforcement, and cross-language display so an international-sales team can read locally while replying in the customer's language.
+- Added AI employee configuration for identity, goal, system prompt, model, knowledge bases, Skills, MCP tools, workflows, fallback/handoff strategy, context size, and reception mode.
+- Added draft preview, shadow comparison, and time-bounded AI delegation trials. Trial output is private and cannot become a customer message without passing the explicit delivery path.
+- Separated channel receiving, manual sending, AI assistance, and automatic reception into independent states so connecting a real account does not implicitly enable automatic replies.
 
-- Convert inquiries and conversations into customer and sales-lead records.
-- Enrich leads and apply AI-generated tags while retaining manual remarks and tags.
-- Assign an owner, record outcomes, schedule the next action, and mark won or lost results.
-- Use in-app reminders, tickets, and automation rules to keep leads from being left unattended.
+### 3. Inquiry-to-Sales Follow-up Loop
 
-### Sales Experience and Skills
+- Added lead extraction from real conversation context, including contact details, company, country/region, products, quantity, budget, purchase timing, intent, and evidence sources.
+- Added AI-generated tags and lead enrichment without replacing manual remarks, manual tags, or salesperson ownership.
+- Added lead stages, owner assignment, follow-up records, next-action scheduling, due reminders, won/lost outcomes, and links back to the source conversation.
+- Added customer profile synchronization for channel display name and avatar, plus manual contact remarks and tags for information that should not be overwritten by a later sync.
+- Connected conversations, leads, customers, tickets, notifications, and follow-up history so an inquiry remains actionable after the chat ends.
 
-- Select complete conversations or individual messages and import them as reviewable cases.
-- Identify only genuinely reusable sales techniques; a conversation may correctly produce no Skill.
-- Present evidence and reasoning in a readable review flow instead of exposing raw model JSON.
-- Edit, reject, retry, or approve each candidate independently before adding it to the Skill library.
-- Bind approved Skills to an AI employee and compare answers with and without an individual Skill.
+### 4. Sales Experience Mining and Skill Lifecycle
 
-### Knowledge, Automation, and Operations
+- Added a dedicated workbench that imports a complete customer lifecycle or a user-selected subset of messages as an immutable review case.
+- Added evidence-first extraction that is intentionally allowed to return no result. The miner distinguishes reusable sales techniques from routine inquiry handling, product facts, one-off transactions, and unsupported model inference.
+- Added readable extraction reasons, exact source quotations, transfer tests, safety boundaries, and human review instead of exposing raw model JSON as the product interface.
+- Added per-candidate editing, rejection, cancellation, retry, and independent approval. Candidates are not bulk-published simply because they came from the same extraction run.
+- Added Skill-library import, AI-employee binding, and single-Skill comparison so an operator can test exactly one technique mounted versus unmounted.
+- Kept source adapters decoupled through a normalized conversation format, allowing future WeCom, Feishu, or imported chat histories to enter the same extraction pipeline.
 
-- Knowledge-base RAG with documents, FAQs, chunks, retrieval logs, and answerability checks.
-- Rules with triggers, conditions, actions, enablement state, and execution history.
-- Initial actions cover lead handling, tagging, owner assignment, and ticket workflows.
-- Human takeover, AI delegation trials, conversation memory, service tickets, and operational audit context.
+### 5. Automation, Collaboration, and Operational Controls
+
+- Added an automation rule model with triggers, conditions, ordered actions, enable/disable state, idempotent execution scope, and run history.
+- Initial actions cover lead creation and updates, customer tagging, owner assignment, follow-up work, and after-sales ticket creation; rules are disabled by default until reviewed.
+- Added AI delegation ownership and revision checks, human reclaim, expiry, stale-result rejection, and private event history for controlled temporary reception.
+- Added realtime inbox updates, internal notifications, conversation memory, translation state, ticket progress, and customer/lead context panels.
+- Added channel-level outbound checks and human-only reception paths so operators can continue receiving and developing against production channels without automatically dispatching model output.
 
 ## Main Workspaces
 
@@ -120,14 +127,50 @@ Default development URLs:
 - Connecting a channel and enabling automatic AI reception are separate decisions. Review reception mode and sending policy before using a real account.
 - Imported histories and production customer data stay in local runtime data paths and are excluded from this repository.
 
-## Architecture
+## Technical Architecture
 
-- Backend: Go, Gin, GORM
-- Frontend: Next.js 16, React 19, shadcn/ui, Tailwind CSS
-- Data: SQLite or MySQL
-- Retrieval: Qdrant with optional LanceDB support
-- AI: OpenAI-compatible providers, RAG, Skills, MCP, and workflow runtime
-- Realtime and channels: WebSocket, website SDK, WhatsApp linked device, Messenger adapter
+AgentDesk is a modular monolith: channel adapters, reception, sales workflows, AI runtime, and the dashboard are deployed together, but their contracts and ownership boundaries remain separate.
+
+### Backend and Domain Layer
+
+- **Language and HTTP:** Go 1.26, Gin 1.12, request validation with `validator`, localized API messages, and explicit dashboard/public API handlers.
+- **Persistence:** GORM 1.31 with SQLite for local work and MySQL/PostgreSQL drivers for deployed environments. Domain models, repositories, services, handlers, and response builders form separate layers.
+- **Business orchestration:** transaction-scoped services own conversations, assignments, customers, leads, follow-ups, tickets, automation, AI delegation, notifications, and audit records.
+- **Authentication and safety:** JWT, OIDC/OAuth2 support, permission-scoped routes, HTML sanitization through Bluemonday, private runtime configuration boundaries, and outbound eligibility checks at both orchestration and transport stages.
+- **Background work:** `robfig/cron`, an internal event bus, bounded goroutine pools via `ants`, database-backed idempotency/outbox records, and retry/revision guards for asynchronous work.
+
+### AI and Retrieval Runtime
+
+- **Model access:** OpenAI-compatible providers through `openai-go` and CloudWeGo Eino adapters; model, embedding, rerank, timeout, retry, and output settings are stored as runtime configuration rather than source constants.
+- **Agent loop:** a transport-neutral runtime supports streaming model output, bounded multi-step tool calls, typed tool definitions, cancellation, traces, confirmation gates, and stale-context rejection.
+- **Knowledge RAG:** document/FAQ ingestion, chunking, embedding, vector retrieval, reranking, source attribution, answerability checks, and fallback/handoff behavior.
+- **Vector stores:** Qdrant through its gRPC client; optional embedded LanceDB through a build tag and native library.
+- **Extensibility:** Skill documents, MCP servers through the official Go SDK, built-in tools, graph nodes, and a validated workflow DSL/registry.
+- **Sales Skill mining:** asynchronous full-lifecycle extraction jobs, evidence audit, human review, normalized Skill output, Skill-library import, and mounted/unmounted evaluation.
+
+### Channel and Realtime Layer
+
+- **Website:** embedded support SDK and customer chat surfaces backed by the same conversation APIs.
+- **WhatsApp:** `whatsmeow` and Signal protocol dependencies for linked-device sessions, QR pairing, structured events, encrypted media, history sync, profiles, and sending.
+- **Messenger:** `mautrix-meta`-based adapter with a shared linked-chat business contract.
+- **Normalization:** channel payloads become common incoming/message/status/media structures before reaching customer, conversation, sales, or AI services.
+- **Realtime:** Gorilla WebSocket pushes conversation, message, assignment, translation, copilot, and work-state changes to the dashboard; persistent state remains the source of truth after reconnect.
+
+### Frontend
+
+- **Framework:** Next.js 16, React 19, TypeScript 6, Tailwind CSS 4, shadcn/ui, and Base UI primitives.
+- **State and data:** Zustand stores, authenticated API clients, server-derived conversation revisions, and realtime merge logic designed to tolerate reconnects and duplicate events.
+- **Forms and validation:** React Hook Form and Zod; TanStack Table for operational lists; dnd-kit for ordered editors.
+- **Content and visualization:** TipTap, Markdown/remark/rehype, Mermaid, Recharts, structured-message viewers, and resizable workbench layouts.
+- **Quality:** Go unit/integration tests, Node contract tests, TypeScript checks, ESLint, and Playwright browser scripts with synthetic API fixtures for desktop/mobile and Chinese/English states.
+
+### Deployment and Data
+
+- **Packaging:** Taskfile-driven development/build/release commands, a statically served Next.js export embedded in the Go binary, and Docker/Docker Compose deployment.
+- **Primary data:** SQLite, MySQL, or PostgreSQL through GORM; Compose currently provisions MySQL.
+- **Vector data:** Qdrant by default, optional LanceDB for a local embedded vector store.
+- **Files:** local storage or Aliyun OSS through the storage service boundary.
+- **Configuration:** Viper/YAML plus environment overrides; secrets, channel sessions, imported histories, and customer data stay outside Git.
 
 ```text
 .
