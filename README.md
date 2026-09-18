@@ -1,133 +1,163 @@
-# AgentDesk
+# AgentDesk Customer Service Desk
 
-English | [简体中文](README_ZH.md)
+基于 AgentDesk 二次开发的 AI 客服与销售跟进系统。项目面向需要同时处理网站咨询、消息渠道接入、知识库问答、人工接管和后续销售跟进的团队，重点展示一套从“客户咨询”到“AI 接待 / 人工协作 / 线索跟进”的完整业务链路。
 
-An open-source AI Agent customer support system with knowledge-based answers, human handoff, ticket workflows, and self-hosted deployment.
+> 说明：本仓库保留原项目历史、许可证和已有基础能力。我的整理重点是公开展示本次二次开发方向、工程拆解和可核验的源码入口，避免把已有开源基础误表述为个人从零实现。
 
-> Built for teams that need online support, knowledge-base Q&A, human collaboration, and service tracking in one system. It is not just an LLM inside a chat box; it is an AI Helpdesk foundation designed around real support operations.
+## 项目定位
 
-## Product Preview
+传统客服系统通常只覆盖工单或在线聊天，本项目把 AI Agent、知识库 RAG、人工接管和销售线索沉淀放在同一条链路中：
 
-Customer chat, agent workspace, knowledge base, model configuration, and AI Agent orchestration are managed in one system.
+```mermaid
+flowchart LR
+  A[客户咨询] --> B[统一会话]
+  B --> C[AI Agent 首轮接待]
+  C --> D{知识库是否足以回答}
+  D -- 是 --> E[基于知识库回复]
+  D -- 否 --> F[兜底并建议人工]
+  E --> G{是否需要人工}
+  F --> H[人工接管]
+  G -- 是 --> H
+  G -- 否 --> I[沉淀客户信息]
+  H --> I
+  I --> J[工单或销售线索]
+  J --> K[跟进 / 关闭]
+```
 
-### Customer Chat
+适合用于展示以下能力：
 
-![Customer Chat](screenshots/1.png)
+- AI 客服系统的后端分层、会话状态和人工接管设计。
+- RAG 知识库问答、检索证据和可回答性控制。
+- 多渠道消息接入后的统一会话建模。
+- 客户记忆、销售线索和人工修订之间的一致性处理。
+- Go + Next.js 全栈工程、Docker 部署和 CI 配置。
 
-Customers can start a conversation from the web chat page. The AI Agent responds first with knowledge-grounded answers. When the user explicitly asks for a human, the system can start a handoff confirmation flow.
+## 本次二次开发重点
 
-### Agent Workspace
+最近一次核心提交为 `173ae4e feat: integrate multichannel AI reception and sales follow-up`。该提交在既有 AgentDesk 基础上扩展了多渠道接待、客服协作、客户记忆、销售线索、跨语言接待和 RAG 能力。
 
-![Agent Workspace](screenshots/2.png)
+### 1. 多渠道接待
 
-The support workspace includes conversation lists, message handling, AI-to-human handoff, agent replies, conversation tags, linked customers, and ticket context for daily support work.
+新增 WhatsApp / Messenger 相关接入链路，并将消息统一归入会话系统。实现中区分历史导入消息和实时客户消息，避免同步历史记录时触发 AI 批量回复。
 
-### Knowledge Base and AI Agent Configuration
+关键入口：
 
-| Knowledge Base FAQ | AI Agent Configuration |
+- `internal/services/whatsapp_service.go`
+- `internal/services/messenger_service.go`
+- `internal/whatsapp/*`
+- `internal/messenger/*`
+- `web/app/(dashboard)/dashboard/channels/*`
+
+### 2. 客服待办与人工协作
+
+将“已读”和“已处理”拆开建模，支持客服在统一收件箱中处理待办、稍后跟进、内部备注和人工接管。这样可以避免只用未读状态代表处理进度。
+
+关键入口：
+
+- `internal/services/conversation_work_service.go`
+- `internal/services/conversation_inbox_service.go`
+- `internal/services/conversation_human_dispatch_service.go`
+- `web/app/(dashboard)/dashboard/conversations/_components/reception-workbar.tsx`
+
+### 3. 客户记忆与画像
+
+新增会话记忆提取、人工确认、来源消息追溯和异步任务修订号保护。核心目标是防止旧的 AI 提取结果覆盖新消息或人工修订后的内容。
+
+关键入口：
+
+- `internal/services/conversation_memory_service.go`
+- `internal/repositories/conversation_memory.go`
+- `internal/models/conversation_memory.go`
+- `web/app/(dashboard)/dashboard/conversations/_components/conversation-memory.tsx`
+
+### 4. 销售线索与跟进
+
+从客户消息中识别明确购买意图，抽取产品、数量、目的地、联系方式等字段，并保留来源消息证据。人工确认后的字段与 AI 新建议分离处理，支持负责人、下一步动作和跟进时间。
+
+关键入口：
+
+- `internal/services/sales_lead_extraction.go`
+- `internal/services/sales_lead_service.go`
+- `internal/services/sales_lead_followup.go`
+- `internal/models/sales_lead.go`
+- `web/app/(dashboard)/dashboard/sales-leads/page.tsx`
+- `web/components/sales-lead-detail.tsx`
+
+### 5. 跨语言接待
+
+支持客服查看消息译文、翻译回复草稿，并在发送前确认。AI 自动回复语言只从客户当前文本和近期客户语言上下文判断，避免后台语言、知识库语言或客服界面语言干扰。
+
+关键入口：
+
+- `internal/services/conversation_translation_service.go`
+- `internal/ai/application/runtime/reply_language.go`
+- `web/app/(dashboard)/dashboard/conversations/_components/conversation-translation.tsx`
+- `web/app/(dashboard)/dashboard/conversations/_components/translated-reply.tsx`
+
+### 6. RAG 与知识库增强
+
+新增递归切片、父子切片、网站导入和 Elasticsearch 向量库适配。父子切片的思路是用较小片段匹配问题，用较大父片段提供回答上下文。
+
+关键入口：
+
+- `internal/ai/rag/chunk/parent_child_provider.go`
+- `internal/ai/rag/chunk/recursive_provider.go`
+- `internal/services/knowledge_ingestion_service.go`
+- `internal/services/knowledge_website_crawler.go`
+- `internal/ai/rag/vectordb/elasticsearch.go`
+
+### 7. AI 回复调度
+
+新增进程内回复队列，使同一会话内的 AI 回复串行执行，不同会话仍可并行处理。同时过滤历史、撤回、发送中、失败和已关闭会话中的消息，降低错误触发自动回复的风险。
+
+关键入口：
+
+- `internal/ai/runtime/reply_queue.go`
+- `internal/ai/runtime/reply_eligibility.go`
+- `internal/ai/application/runtime/eino_agent_loop.go`
+
+## 技术栈
+
+| 层级 | 技术 |
 | --- | --- |
-| ![Knowledge Base FAQ](screenshots/4.png) | ![AI Agent Configuration](screenshots/5.png) |
+| 后端 | Go 1.26, Gin, GORM, SQLite / MySQL / PostgreSQL |
+| 前端 | Next.js 16, React 19, TypeScript, Tailwind CSS |
+| AI | OpenAI-compatible 模型接入, Eino, MCP, RAG |
+| 向量库 | Qdrant, LanceDB, Elasticsearch |
+| 工作流编辑器 | Flowgram Editor, React 18 |
+| 部署 | Docker, Docker Compose, GitHub Actions |
 
-The knowledge base stores FAQs, documents, and retrievable content. AI Agents can be bound to model configurations, knowledge bases, Skills, and tools to create support agents for specific scenarios.
+## 运行方式
 
-### Model Configuration
-
-![Model Configuration](screenshots/3.png)
-
-Model configuration supports OpenAI-compatible providers. You can configure LLMs, embedding models, rerank models, context limits, output settings, timeout, retry behavior, and enablement state.
-
-## Why Use It
-
-- **AI-first support**: Let AI Agents handle common questions, standard procedures, and knowledge-base answers first.
-- **Knowledge-constrained replies**: Use RAG and the Answerability Gate to decide whether retrieved knowledge is strong enough to answer, reducing unsupported responses.
-- **Natural human handoff**: Move to human agents when knowledge is insufficient, the user asks for help, or a workflow requires human confirmation.
-- **Conversation-to-ticket loop**: Online chat, support handling, ticket creation, status flow, and progress records stay in one system.
-- **Built for extension**: The backend uses Go, the frontend uses Next.js, and the runtime supports Skills, MCP, and OpenAI-compatible model access.
-- **Self-host friendly**: Supports SQLite / MySQL and Qdrant for local trials, intranet deployment, and enterprise self-hosting.
-
-## Core Capabilities
-
-- **AI Agent support**: AI replies first, with fallback, confirmation, tool calling, and human collaboration.
-- **Online conversation system**: Visitor sessions, message send/receive, unread status, assignment, transfer, and close flows.
-- **Agent workspace**: Agents can take over conversations, reply to users, transfer teammates, link customers, and create tickets.
-- **Knowledge-base RAG**: Knowledge bases, documents, FAQs, chunking, vector retrieval, retrieval logs, and quality analysis.
-- **Answerability Gate**: Checks whether retrieved content can support an answer; otherwise returns a fallback and recommends human support.
-- **Ticket system**: Create tickets from conversations, categorize, assign, move through status flows, record progress, and close the loop.
-- **Support organization management**: Agent profiles, teams, schedules, and automatic assignment.
-- **AI extensibility**: Skills, MCP debugging, and external tool integration.
-- **Multiple entry points**: Admin dashboard, agent workspace, customer-facing web pages, and embeddable SDK.
-
-## Use Cases
-
-- Website live support
-- SaaS product support
-- AI + human hybrid support
-- Internal enterprise service desk
-- After-sales service, incident reporting, complaints, and operations support
-- Support teams that need knowledge-base Q&A with human collaboration
-
-## Quick Start
-
-The fastest way to try the full stack is Docker Compose:
+推荐使用 Docker Compose 体验完整服务：
 
 ```bash
 docker compose up -d --build
 ```
 
-For the full English setup guide, see [Docker Compose Quick Start](https://agent-desk.huabei.pro/docs/getting-started/docker-compose.html).
+启动后访问：
 
-To embed customer support on your website, see [Web Widget Integration](https://agent-desk.huabei.pro/docs/integration/web-widget.html).
+- 管理后台：`http://localhost:8083/dashboard`
+- 客服会话工作台：`http://localhost:8083/dashboard/conversations`
+- 客户侧演示页：`http://localhost:8083/support/demo`
+- 客户聊天页：`http://localhost:8083/support/chat`
 
-To connect OpenAI-compatible model providers, see [Model Provider Configuration](https://agent-desk.huabei.pro/docs/config/model-provider.html).
+默认管理员账号：
 
-Compose starts:
+- 用户名：`admin`
+- 密码：`ChangeMe123!`
 
-- `agent-desk`: application service on port `8083`
-- `mysql`: MySQL 8.4 with the `mysql-data` volume
-- `qdrant`: vector database with the `qdrant-data` volume, ports `6333` / `6334`
+公开部署前请务必修改默认密码，并配置独立的鉴权、会话和模型密钥。
 
-After startup, open:
+## 本地开发
 
-- Admin dashboard: `http://localhost:8083/dashboard`
-- Agent workspace: `http://localhost:8083/dashboard/conversations`
-- Customer web integration demo: `http://localhost:8083/support/demo`
-- Customer chat page: `http://localhost:8083/support/chat`
-
-Default administrator account:
-
-- Username: `admin`
-- Password: `ChangeMe123!`
-
-> Before exposing the system to the public internet or a team environment, change the default administrator password and configure independent authentication, session, and model secrets.
-
-## Local Development
-
-### Requirements
-
-- Go `1.26+`
-- Node.js `20+`
-- `pnpm`
-- Qdrant
-
-### Prepare Configuration
+准备配置：
 
 ```bash
 cp config/config.example.yaml config/config.yaml
 ```
 
-The default configuration uses:
-
-- SQLite: `data/app.db`
-- Backend: `http://127.0.0.1:8083`
-- Qdrant gRPC: `127.0.0.1:6334`
-
-If Qdrant is not running locally, start it with Docker:
-
-```bash
-docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
-```
-
-Install frontend dependencies:
+安装前端依赖：
 
 ```bash
 cd web
@@ -135,144 +165,46 @@ pnpm install
 cd ..
 ```
 
-Start backend and frontend development servers together:
+启动后端和前端开发服务：
 
 ```bash
 task dev
 ```
 
-Default development URLs:
-
-- Admin dashboard: `http://localhost:3000/dashboard`
-- Agent workspace: `http://localhost:3000/dashboard/conversations`
-- Customer web integration demo: `http://localhost:3000/support/demo`
-- Customer chat page: `http://localhost:3000/support/chat`
-
-## Tech Stack
-
-- Backend: Golang + Gin + GORM + `github.com/mlogclub/simple`
-- Frontend: Next.js 16 + React 19 + shadcn/ui + Tailwind CSS
-- Database: SQLite / MySQL
-- Vector DB: Qdrant
-- AI: OpenAI-compatible LLM / Embedding + RAG + Skills + MCP
-
-## Project Structure
-
-```text
-.
-├── cmd/                    # server / migration / generator / testdata
-├── internal/
-│   ├── bootstrap/          # startup, routes, database, and migration initialization
-│   ├── builders/           # model / aggregate result to response DTO mapping
-│   ├── handlers/           # dashboard / api / third HTTP handlers
-│   ├── middleware/         # Gin middleware
-│   ├── migration/          # idempotent data migrations
-│   ├── models/             # GORM models
-│   ├── repositories/       # data access layer
-│   ├── services/           # business orchestration and transaction boundaries
-│   ├── ai/                 # LLM / RAG / Runtime / Skills / MCP
-│   └── pkg/                # config / dto / enums / httpx / utils and shared packages
-├── web/                    # Next.js frontend project
-│   ├── app/dashboard/      # admin dashboard and agent workspace
-│   ├── app/support/        # customer integration and chat pages
-│   ├── components/         # React components
-│   ├── lib/                # API client, SDK source, and utilities
-│   └── public/sdk/         # built embeddable SDK
-├── config/                 # configuration files
-├── docker/                 # Docker configuration
-└── docs/                   # documentation site
-```
-
-## Common Commands
+常用命令：
 
 ```bash
-task dev        # start backend and frontend development servers
-task build      # build the frontend SPA and current-platform Go binary into dist/
-task build:lancedb  # build the current-platform LanceDB binary into dist/
-task release    # build linux/darwin/windows release binaries into dist/
-task release:lancedb  # build LanceDB release binaries into dist/
-task generator  # run code generation
-task enums      # generate frontend enums
-task --list     # show available tasks
+task build
+task generator
+task enums
+go test ./internal/services/... ./internal/repositories/... ./internal/pkg/...
+cd web && pnpm typecheck
 ```
 
-## AI Agent Workflow
+## 验证状态
 
-```mermaid
-flowchart TD
-    A[User starts a support request<br/>Web support entry / Open API] --> B[Create or match a conversation]
-    B --> C[Customer sends a message]
-    C --> D[Trigger AI Reply Runtime]
-    D --> E[Load conversation history / AI configuration]
-    E --> F[Retrieve from bound knowledge bases]
-    F --> G{Are retrieved chunks enough to answer?}
-    G -- No --> Z[Return knowledge fallback<br/>and recommend human support]
-    G -- Yes --> H[Prepare Skills / MCP Tools]
-    H --> I[Pass trusted knowledge context to the Agent]
-    I --> J{Direct reply?}
-    J -- Yes --> K[LLM generates a knowledge-grounded reply]
-    J -- No --> N{Call Graph / MCP Tool?}
-    N -- Yes --> O[Run Skill / Graph / MCP Tool]
-    O --> P{Need user confirmation?}
-    P -- No --> I
-    P -- Yes --> Q[Ask the user to confirm]
-    Q --> R{Confirmation result}
-    R -- Confirm handoff --> S[Move conversation to human handoff pool]
-    S --> T[Automatic or manual assignment]
-    T --> U[Agent workspace takeover]
-    U --> V{Need ticket tracking?}
-    V -- Yes --> W[Create or link a ticket]
-    V -- No --> X[Human agent continues handling]
-    W --> X
-    X --> Y[Resolve and close]
-    R -- Confirm ticket --> AA[Create a ticket from the current conversation]
-    AA --> I
-    R -- Cancel --> K
-    N -- No --> K
-```
+仓库中包含针对本次业务扩展的测试，例如：
 
-## Support Loop
+- `internal/services/conversation_memory_service_test.go`
+- `internal/services/sales_lead_service_test.go`
+- `internal/services/sales_lead_followup_test.go`
+- `internal/services/conversation_translation_service_test.go`
+- `internal/ai/runtime/reply_queue_test.go`
+- `web/lib/sales-lead.test.mjs`
+- `web/lib/reception.test.mjs`
 
-```mermaid
-flowchart LR
-    A[Customer request] --> B[AI Agent handles first]
-    B --> C{Can the knowledge base answer?}
-    C -- Yes --> D[AI replies with trusted knowledge]
-    C -- No --> E[Fallback / recommend human support]
-    D --> F{Need a human?}
-    E --> G[Human takeover]
-    F -- No --> H[Conversation ends or data is retained]
-    F -- Yes --> G
-    G --> I[Agent workspace handles the case]
-    I --> J{Need follow-up tracking?}
-    J -- Yes --> K[Create / link a ticket]
-    J -- No --> L[Resolve directly]
-    K --> M[Ticket status flow and progress records]
-    M --> N[Complete]
-    L --> N
-```
+本 README 重点整理项目与贡献边界。公开前已对提交历史做过密钥扫描，未发现真实密钥泄露；部分示例 key 和 token 为占位符。
 
-## Docker Image
+## 贡献边界
 
-If you only need to build the application image, prepare MySQL and Qdrant yourself and mount a configuration file:
+为了便于技术负责人审阅，建议重点查看 `173ae4e` 这次提交。该提交适合从以下三个角度追问：
 
-```bash
-docker build -t mlogclub/agent-desk .
-docker run --rm -p 8083:8083 \
-  -v $(pwd)/docker/agent-desk.yaml:/app/config/config.yaml:ro \
-  -v agent-desk-data:/app/data \
-  mlogclub/agent-desk
-```
+- 异步 AI 提取与人工修订如何避免互相覆盖。
+- 历史消息导入为什么不能触发自动回复。
+- 销售线索如何保留来源证据，并区分 AI 建议与人工确认。
 
-Compose uses [docker/agent-desk.yaml](docker/agent-desk.yaml) as the in-container configuration. The application reaches `mysql` and `qdrant` through Docker service names.
+需要明确的是，基础客服平台、部分渠道、权限体系、知识库和工单能力来自既有 AgentDesk 项目历史。本仓库当前用于展示在该基础上的扩展、整合和工程化改造。
 
-## Open-source Positioning
+## License
 
-`AgentDesk` is useful as an open-source foundation for:
-
-- AI customer support systems
-- AI Helpdesk / AI Support Platform projects
-- RAG answerability + human handoff implementation references
-- Enterprise AI Agent application frameworks
-
-If you are looking for a customer support system centered on AI Agents rather than a simple LLM chat box, this project is designed for that purpose.
+本项目遵循原仓库许可证，见 [LICENSE](LICENSE)。二次开发内容同样在该许可证约束下公开。
